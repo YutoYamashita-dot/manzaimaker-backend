@@ -1,0 +1,24 @@
+{
+  "name": "manzaimaker-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YutoYamashita/manzaimaker-backend.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/YutoYamashita/manzaimaker-backend/issues"
+  },
+  "homepage": "https://github.com/YutoYamashita/manzaimaker-backend#readme",
+  "dependencies": {
+    "openai": "^6.3.0",
+    "zod": "^4.1.12"
+  }
+}
