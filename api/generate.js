@@ -5,7 +5,7 @@
 // - OPENAI_API_KEY は Vercel の Environment Variables に設定
 
 export const config = {
-  runtime: 'nodejs18.x',
+  runtime: 'nodejs',
 };
 
 import OpenAI from 'openai';
