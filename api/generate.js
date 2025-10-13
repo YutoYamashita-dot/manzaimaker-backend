@@ -1,127 +1,147 @@
-// Vercel /api/generate エンドポイント（Node.js）
-// - elements を受け取りプロンプトへ反映
-// - 出力は 2000 文字以下に強制
-// - 最後に（文字数：XXXX文字）をサーバ側で正確に付け直す（モデルの記載に依存しない）
-// - OPENAI_API_KEY は Vercel の Environment Variables に設定
+// api/generate.js
+// Vercel (Node.js) 用 API ルート。ESM 前提（package.json に "type": "module"）。
+// OpenAI SDK v4（npm: openai）を使用します。
 
-export const config = {
-  runtime: 'nodejs',
-};
+import OpenAI from "openai";
 
-import OpenAI from 'openai';
+// Vercel の Node.js ランタイムを明示（"nodejs18.x" のような古い値は NG なので注意）
+export const config = { runtime: "nodejs" };
 
-const client = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
-// 文字数を 2000 に制限しつつ、できれば行末で気持ちよく切る
-function hardCapTo2000Chars(text, cap = 2000) {
-  if (!text) return '';
-  if (text.length <= cap) return text;
-
-  // 直前の改行で切る（なければそのままカット）
-  const cutoff = text.lastIndexOf('\n', cap - 10);
-  const slicePoint = cutoff > 0 ? cutoff : cap;
-  const trimmed = text.slice(0, slicePoint);
-  return trimmed + '\n（※上限に達したため一部省略）';
+// ===== ユーティリティ: 文字数（コードポイント）を厳密に数える =====
+function codePointLength(str) {
+  // 改行は文字数カウントから除外したい場合はここで除去
+  const cleaned = str.replace(/\r/g, "").replace(/\n/g, "");
+  return Array.from(cleaned).length;
 }
 
-// 末尾の（文字数：XXXX文字）を一旦削除して、正しい値で付け直す
-function rewriteCharCountFooter(text) {
-  if (!text) return '（文字数：0文字）';
-
-  // 既存の「（文字数：...文字）」を取り除く
-  const cleaned = text.replace(/（文字数：\d+文字）\s*$/u, '').trimEnd();
-
-  // ここで計測（全角・半角ともに JS の文字数基準＝UTF-16 コードユニット基準）
-  const count = cleaned.length;
-
-  return `${cleaned}\n\n（文字数：${count}文字）`;
+// （必要があれば）最大コードポイント数で丸める
+function clampByCodepoints(str, max) {
+  const arr = Array.from(str);
+  return arr.length <= max ? str : arr.slice(0, max).join("") + "…";
 }
 
 export default async function handler(req, res) {
   try {
-    if (req.method !== 'POST') {
-      return res.status(405).json({ error: 'Method Not Allowed' });
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method Not Allowed" });
     }
 
-    const { theme, genre, characters, length, elements } = req.body || {};
+    const {
+      theme,
+      genre,
+      characters,
+      length,
+      mustInclude = [],      // 任意: クライアントが必須要素を追加したい場合
+      withStructure = true,  // 任意: 構成説明を付けるか（デフォルト付ける）
+    } = (await parseJson(req)) ?? {};
 
-    // 入力チェック
-    if (
-      typeof theme !== 'string' ||
-      typeof genre !== 'string' ||
-      typeof characters !== 'string' ||
-      (typeof length !== 'number' && typeof length !== 'string')
-    ) {
-      return res.status(400).json({ error: 'Missing or invalid fields' });
+    if (!theme || !genre || !characters || !length) {
+      return res.status(400).json({ error: "Missing fields" });
     }
 
-    // 数値化＆上限 2000
-    let targetLen = Number(length);
-    if (!Number.isFinite(targetLen) || targetLen <= 0) targetLen = 300; // デフォルト
-    if (targetLen > 2000) targetLen = 2000;
+    // 文字数は 100〜2000 の範囲にクランプ
+    const len = Math.min(Math.max(parseInt(length, 10) || 350, 100), 2000);
 
-    // elements は配列想定（クライアントがランダム選定）
-    const safeElements =
-      Array.isArray(elements) && elements.length > 0
-        ? elements
-        : ['緊張と緩和']; // フォールバック（最低1つ）
+    // ランダムに追加するオプション要素（毎回シャッフル）
+    const optionalPool = ["風刺", "皮肉", "意外性と納得感"];
+    const shuffled = [...optionalPool].sort(() => Math.random() - 0.5);
+    const optionalCount = Math.floor(Math.random() * (optionalPool.length + 1)); // 0〜3
+    const randomPicked = shuffled.slice(0, optionalCount);
 
-    // 指示文を作成（伏線回収と最後のオチは常に必須）
-    const prompt = `
-以下の条件で漫才ネタを書いてください。
+    // 必須セットを作成：ユーザー指定 + 「緊張と緩和」 + ランダム要素
+    const musts = Array.from(new Set([...(mustInclude || []), "緊張と緩和", ...randomPicked]));
 
-【テーマ】${theme}
-【ジャンル】${genre}
-【登場人物】${characters}
-【構成】「伏線回収」と「最後のオチ」を必ず入れてください。
-また、次の4つの理論のうち、クライアントから指定されたもの **だけ** を使ってください：
-- 緊張と緩和
-- 風刺
-- 皮肉
-- 意外性と納得感
+    // OpenAI
+    const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    const model = process.env.OPENAI_MODEL || "gpt-4.1-mini";
 
-今回、使う理論（指定）: ${safeElements.join('、')}
+    const system = [
+      "あなたは日本語の放送作家です。人間らしい自然な会話文で漫才ネタを書きます。",
+      "必ず 2000 文字以内で書きます。",
+      `必須要素は「${musts.join("」「")}」です（最低でも「緊張と緩和」は必ず含めること）。`,
+      "必ず『伏線回収』と『最後のオチ』を入れます。",
+      "A/B の掛け合いを主体に。読みやすさ最優先（見出しや過剰な装飾は控えめに）。",
+    ].join("\n");
 
-【長さ】合計で「${targetLen}文字」以上「${Math.min(
-      targetLen + 50,
-      2000
-    )}文字」以下にしてください（絶対に2000文字を超えないでください）。
-【追加条件】出力の最後に「（文字数：XXXX文字）」と明記してください（XXXXは実際の文字数）。
-【注意】ハルシネーションなしで、現実に即して、人間が作るような滑らかな展開にしてください。最後に漫才の構成（箇条書き）も示してください。
-`.trim();
+    const user = [
+      "【条件】",
+      `- テーマ: ${theme}`,
+      `- ジャンル: ${genre}`,
+      `- 登場人物: ${characters}`,
+      `- 目安文字数: 約${len}文字以内`,
+      withStructure
+        ? "- 出力の最後に、簡潔な構成を「### 構成」見出しで付ける（導入/緊張と緩和/伏線回収/オチ 等を短く箇条書き）"
+        : "- 構成説明は不要",
+      "",
+      "【出力形式】",
+      "1) 最初に漫才ネタ本文（A: / B: の掛け合い中心）",
+      "2) （本文の後）空行を1つ開けてから、（文字数：N文字）と明記（Nは本文の厳密な文字数: 改行除外・装飾除去後のコードポイント数）",
+      withStructure ? "3) その後に「### 構成」セクション" : "",
+    ]
+      .filter(Boolean)
+      .join("\n");
 
-    // OpenAI 呼び出し
-    const completion = await client.chat.completions.create({
-      model: 'gpt-4o-mini', // コスト・速度優先の軽量モデル例。必要に応じて変更可。
-      temperature: 0.8,
-      messages: [
-        {
-          role: 'system',
-          content:
-            'あなたは日本語のお笑い脚本のプロです。事実に反する断定や固有名詞の創作は避け、常識の範囲で現実に即した内容にしてください。',
-        },
-        { role: 'user', content: prompt },
+    // Responses API（SDK v4）。output_text がまとめて取れるので扱いが簡単です。
+    const ai = await client.responses.create({
+      model,
+      input: [
+        { role: "system", content: system },
+        { role: "user", content: user },
       ],
     });
 
-    let text =
-      completion.choices?.[0]?.message?.content?.trim() ||
-      '生成に失敗しました。時間をおいて再度お試しください。';
+    const raw = (ai.output_text || "").trim();
+    if (!raw) {
+      return res.status(502).json({ error: "Empty model output" });
+    }
 
-    // 物理上限 2000 をサーバで強制
-    text = hardCapTo2000Chars(text, 2000);
+    // 「### 構成」以降を分離。文字数は“本文のみ”で厳密カウント。
+    const parts = raw.split(/\n###\s*構成/i);
+    let scriptPart = parts[0].trim();
+    const structurePart = parts[1] ? `### 構成${parts[1]}` : "";
 
-    // 末尾の（文字数：XXXX文字）を正しい値で付け直し
-    text = rewriteCharCountFooter(text);
+    // 2000文字を超える場合は本文を安全に丸める（コードポイント単位）
+    // ※ 厳密上限は 2000、必要に応じて len に合わせて丸める
+    const HARD_MAX = 2000;
+    if (codePointLength(scriptPart) > HARD_MAX) {
+      scriptPart = clampByCodepoints(scriptPart, HARD_MAX);
+    }
 
-    return res.status(200).json({ text });
+    // 厳密カウント（改行除外 & 装飾弱めに除去）→ クライアントでも再カウントして二重で安全
+    const forCount = scriptPart
+      .replace(/\*\*|__/g, "") // 太字マークダウンの除去
+      .replace(/\r/g, "")
+      .replace(/\n/g, "");
+    const counted = Array.from(forCount).length;
+
+    const finalOut = [
+      scriptPart,
+      "",
+      `（文字数：${counted}文字）`,
+      "",
+      structurePart.trim(),
+    ]
+      .filter(Boolean)
+      .join("\n");
+
+    res.setHeader("Content-Type", "application/json; charset=utf-8");
+    return res.status(200).json({ text: finalOut, usedMusts: musts });
   } catch (err) {
     console.error(err);
-    return res.status(500).json({
-      error: 'Server error',
-      detail: err?.message ?? String(err),
-    });
+    return res.status(500).json({ error: "Server error" });
+  }
+}
+
+// ---- VercelのNode APIは req.body を自動でパースしないことがあるので安全にJSONを読む ----
+async function parseJson(req) {
+  try {
+    if (req.body && typeof req.body === "object") return req.body;
+    const chunks = [];
+    for await (const c of req) chunks.push(Buffer.from(c));
+    const str = Buffer.concat(chunks).toString("utf8");
+    if (!str) return {};
+    return JSON.parse(str);
+  } catch {
+    return {};
   }
 }
