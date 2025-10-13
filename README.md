@@ -1,2 +1,1 @@
-# manzaimaker-backend
-To make Manzai Neta app
+# manzaimaker-backend 
