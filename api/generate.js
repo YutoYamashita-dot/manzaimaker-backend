@@ -101,7 +101,7 @@ function buildPrompt({ theme, genre, characters, length }) {
   ].join("\n");
 
   // 画面の下部に出したい構成名（固定）
-  const structure = ["フリ", "伏線回収", "最後のオチ", "張り→解放（単語は出さない）"];
+  const structure = ["フリ", "伏線回収", "最後のオチ", "張り→解放"];
 
   return { prompt, usedTechs, structure, maxLen };
 }
