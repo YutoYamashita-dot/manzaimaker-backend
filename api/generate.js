@@ -1,7 +1,9 @@
+
+
+
 // api/generate.js
 // Vercel Node.js (ESM)。本文のみを日本語で返す（台本だけ）
 // 必須: 環境変数 XAI_API_KEY
-// 任意: 環境変数 XAI_MODEL（未設定なら grok-4）
 
 export const config = { runtime: "nodejs" };
 
@@ -39,8 +41,10 @@ const GENERAL_DEFS = {
   GYAKUHARI: "逆張り構成：期待・常識を外して予想を逆手に取る。",
   TENKAI_HAKAI: "展開破壊：築いた流れを意図的に壊し異質な要素を挿入。",
   KANCHIGAI_TEISEI: "勘違い→訂正：ボケの勘違いをツッコミが訂正する構成。",
-  SURECHIGAI: "すれ違い：互いの前提が噛み合わずズレ続けて笑いを生む。",
-  TACHIBA_GYAKUTEN: "立場逆転：途中または終盤で役割・地位がひっくり返る。",
+  SURECHIGAI:
+    "すれ違い：互いの前提が噛み合わずズレ続けて笑いを生む。",
+  TACHIBA_GYAKUTEN:
+    "立場逆転：途中または終盤で役割・地位がひっくり返る。",
 };
 
 /* =========================
@@ -48,10 +52,20 @@ const GENERAL_DEFS = {
    ========================= */
 const MUST_HAVE_TECH = "比喩ツッコミ";
 function pickTechniquesWithMetaphor() {
-  const pool = ["風刺", "皮肉", "意外性と納得感", "勘違い→訂正", "言い間違い→すれ違い", "立場逆転", "具体例の誇張"];
+  const pool = [
+    "風刺",
+    "皮肉",
+    "意外性と納得感",
+    "勘違い→訂正",
+    "言い間違い→すれ違い",
+    "立場逆転",
+    "具体例の誇張",
+    // 「比喩ツッコミ」必須は別扱い
+  ];
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const extraCount = Math.floor(Math.random() * 3) + 1; // 1〜3
-  return [MUST_HAVE_TECH, ...shuffled.slice(0, extraCount)]; // 合計2〜4
+  const extras = shuffled.slice(0, extraCount);
+  return [MUST_HAVE_TECH, ...extras]; // 合計2〜4
 }
 
 /* =========================
@@ -62,6 +76,7 @@ function enforceCharLimit(text, maxLen) {
   let t = text.trim();
   t = t.replace(/```[\s\S]*?```/g, "").trim();
   t = t.replace(/^#{1,6}\s.*$/gm, "").trim();
+
   if (t.length <= maxLen) return t;
 
   const softCut = t.lastIndexOf("\n", maxLen);
@@ -76,12 +91,18 @@ function enforceCharLimit(text, maxLen) {
 }
 
 /* =========================
-   4) ガイドライン生成（選択技法→定義を埋め込む）
+   4) ガイドライン生成（新：選択技法→定義を埋め込む）
    ========================= */
 function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }) {
-  const bokeLines = boke.filter((k) => BOKE_DEFS[k]).map((k) => `- ${BOKE_DEFS[k]}`);
-  const tsukkomiLines = tsukkomi.filter((k) => TSUKKOMI_DEFS[k]).map((k) => `- ${TSUKKOMI_DEFS[k]}`);
-  const generalLines = general.filter((k) => GENERAL_DEFS[k]).map((k) => `- ${GENERAL_DEFS[k]}`);
+  const bokeLines = boke
+    .filter((k) => BOKE_DEFS[k])
+    .map((k) => `- ${BOKE_DEFS[k]}`);
+  const tsukkomiLines = tsukkomi
+    .filter((k) => TSUKKOMI_DEFS[k])
+    .map((k) => `- ${TSUKKOMI_DEFS[k]}`);
+  const generalLines = general
+    .filter((k) => GENERAL_DEFS[k])
+    .map((k) => `- ${GENERAL_DEFS[k]}`);
 
   const parts = [];
   if (bokeLines.length) parts.push("【ボケ技法】", ...bokeLines);
@@ -92,7 +113,8 @@ function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }
 }
 
 function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
-  const toLabel = (ids, table) => ids.filter((k) => table[k]).map((k) => table[k].split("：")[0]);
+  const toLabel = (ids, table) =>
+    ids.filter((k) => table[k]).map((k) => table[k].split("：")[0]); // 「定義：…」の左側だけ
   return {
     boke: toLabel(boke, BOKE_DEFS),
     tsukkomi: toLabel(tsukkomi, TSUKKOMI_DEFS),
@@ -102,6 +124,8 @@ function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
 
 /* =========================
    5) プロンプト生成
+   - 選択技法があればそれを使用
+   - 無ければ旧仕様のランダム技法を提示
    ========================= */
 function buildPrompt({ theme, genre, characters, length, selected }) {
   const safeTheme = theme && String(theme).trim() ? String(theme).trim() : "身近な題材";
@@ -115,22 +139,28 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
   const minLen = Math.max(100, Math.floor(targetLen * 0.9));
   const maxLen = targetLen;
 
+  // 新仕様：選択技法が1つでもあればそれを使う
   const hasNewSelection =
     (selected?.boke?.length || 0) + (selected?.tsukkomi?.length || 0) + (selected?.general?.length || 0) > 0;
 
-  let techniquesForMeta = [];
-  let guideline = "";
-  let structureMeta = ["フリ", "伏線回収", "最後のオチ"];
+  let techniquesForMeta = []; // 画面表示用
+  let guideline = "";         // プロンプトへ入れる定義文
+  let structureMeta = ["フリ", "伏線回収", "最後のオチ"]; // ベース構成
 
   if (hasNewSelection) {
     guideline = buildGuidelineFromSelections(selected);
     const labels = labelizeSelected(selected);
     techniquesForMeta = [...labels.boke, ...labels.tsukkomi];
+    // 「全般（構成）」は meta.structure にも反映
     structureMeta = [...structureMeta, ...labels.general];
   } else {
+    // 旧仕様互換：比喩ツッコミ必須＋ランダム2〜4個
     const usedTechs = pickTechniquesWithMetaphor();
     techniquesForMeta = usedTechs;
-    guideline = "【採用する技法（クライアント未指定のため自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
+    guideline =
+      "【採用する技法（クライアント未指定のため自動選択）】\n" +
+      usedTechs.map((t) => `- ${t}`).join("\n");
+    // 構成は固定
   }
 
   const prompt = [
@@ -147,7 +177,12 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 3) 最後は明確な“オチ”で締める（余韻よりも落ちを優先）",
     "",
     "■選択された技法ガイドライン（必ず本文で顕在化。名称は本文に書かない）",
-    guideline || "（特に指定なし。自然に面白く）",
+    guideline || "（特に指定なし。自然に面白く）」",
+    "",
+    "■必須の演出（語は出さないこと）",
+    "- 台本中に、“ピリつく・焦る・気まずい・誤解で困る”等の**張り詰めた状態**を一度作る",
+    "- その後、誤解が解ける・立場が変わる・勘違いに気づく・期待を裏切るが納得できる等で**空気が和らぐ状態**を作る",
+    "- **本文に『緊張』『緩和』という単語は出さない**（展開で表現する）",
     "",
     "■文体・出力ルール",
     "- 会話主体で、人間が書いたような自然なテンポ・言い回しにする",
@@ -161,24 +196,21 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
 }
 
 /* =========================
-   6) Grok(xAI) 呼び出し（OpenAI SDK互換）
+   6) OpenAI 呼び出し
    ========================= */
-const client = new OpenAI({
-  apiKey: process.env.XAI_API_KEY, // ← xAIのAPIキー
-  baseURL: "https://api.x.ai",     // ← 重要：xAIのベースURL
-});
-const MODEL = process.env.XAI_MODEL || "grok-4";
+const openai = new OpenAI({ apiKey: process.env.XAI_API_KEY });
 
-/* 失敗理由を分かりやすくする正規化 */
-function normalizeError(err) {
-  return {
-    name: err?.name,
-    message: err?.message,
-    status: err?.status ?? err?.response?.status,
-    data: err?.response?.data ?? err?.error,
-    // 本番では stack を返さない
-    stack: process.env.NODE_ENV === "production" ? undefined : err?.stack,
-  };
+
+async function createWithFallback(payloadBase) {
+  try {
+    return await openai.chat.completions.create({ ...payloadBase, model: PREFERRED_MODEL });
+  } catch (e) {
+    console.warn(
+      `[generate] primary model failed (${PREFERRED_MODEL}). Fallback to ${FALLBACK_MODEL}.`,
+      e?.message || e
+    );
+    return await openai.chat.completions.create({ ...payloadBase, model: FALLBACK_MODEL });
+  }
 }
 
 /* =========================
@@ -186,10 +218,10 @@ function normalizeError(err) {
    ========================= */
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method Not Allowed" });
-    }
+    if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
 
+    // 新仕様の選択パラメータ（Android から送られてくる想定）
+    // boke/tsukkomi/general は Enum 名の配列（例: ["HIYU","META","SANDAN_OCHI"]）
     const { theme, genre, characters, length, boke, tsukkomi, general } = req.body || {};
 
     const { prompt, techniquesForMeta, structureMeta, maxLen } = buildPrompt({
@@ -204,45 +236,35 @@ export default async function handler(req, res) {
       },
     });
 
-    const messages = [
-      {
-        role: "system",
-        content:
-          "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。メタ説明は禁止。",
-      },
-      { role: "user", content: prompt },
-    ];
+    const payloadBase = {
+      messages: [
+        {
+          role: "system",
+          content:
+            "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。メタ説明は禁止。禁止語:『緊張』『緩和』。",
+        },
+        { role: "user", content: prompt },
+      ],
+      temperature: 0.8,
+      max_tokens: 1400,
+    };
 
-    let completion;
-    try {
-      completion = await client.chat.completions.create({
-        model: MODEL, // "grok-4"
-        messages,
-        temperature: 0.8,
-        max_tokens: 1400,
-      });
-    } catch (err) {
-      const e = normalizeError(err);
-      console.error("[xAI error]", e);
-      return res.status(e.status || 500).json({
-        error: "xAI request failed",
-        detail: e, // ← ステータス・メッセージ・data を含む
-      });
-    }
+    const completion = await createWithFallback(payloadBase);
 
-    const text = completion?.choices?.[0]?.message?.content?.trim() || "";
+    let text = completion?.choices?.[0]?.message?.content?.trim() || "（ネタの生成に失敗しました）";
     const finalText = enforceCharLimit(text, maxLen);
 
     return res.status(200).json({
-      text: finalText || "（ネタの生成に失敗しました）",
+      text: finalText,
       meta: {
-        structure: structureMeta,
-        techniques: techniquesForMeta,
+        structure: structureMeta,       // 基本構成 + 選択された「全般」技法名
+        techniques: techniquesForMeta,  // 選択された ボケ/ツッコミ（名称のみ）
       },
     });
   } catch (err) {
-    const e = normalizeError(err);
-    console.error("[handler error]", e);
-    return res.status(500).json({ error: "Server Error", detail: e });
+    console.error(err);
+    return res.status(500).json({ error: "Server Error" });
   }
 }
+
+
