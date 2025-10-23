@@ -55,24 +55,29 @@ function pickTechniquesWithMetaphor() {
 }
 
 /* =========================
-   3) 文字数の最終調整
+   3) 文字数の最終調整（末尾が不自然なら一文補う版）
    ========================= */
 function enforceCharLimit(text, maxLen) {
   if (!text) return "";
-  let t = text.trim();
-  t = t.replace(/```[\s\S]*?```/g, "").trim();
-  t = t.replace(/^#{1,6}\s.*$/gm, "").trim();
-  if (t.length <= maxLen) return t;
+  let t = text
+    .trim()
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/^#{1,6}\s.*$/gm, "")
+    .trim();
 
-  const softCut = t.lastIndexOf("\n", maxLen);
-  const softPuncs = ["。", "！", "？", "…", "♪"];
-  const softPuncCut = Math.max(...softPuncs.map((p) => t.lastIndexOf(p, maxLen)));
+  if (t.length > maxLen) {
+    const softCut = t.lastIndexOf("\n", maxLen);
+    const softPuncs = ["。", "！", "？", "…", "♪"];
+    const softPuncCut = Math.max(...softPuncs.map((p) => t.lastIndexOf(p, maxLen)));
+    let cutPos = Math.max(softPuncCut, softCut);
+    if (cutPos < maxLen * 0.7) cutPos = maxLen;
+    t = t.slice(0, cutPos).trim();
+    if (!/[。！？…♪]$/.test(t)) t += "。";
+  }
 
-  let cutPos = Math.max(softPuncCut, softCut);
-  if (cutPos < maxLen * 0.7) cutPos = maxLen;
-  let out = t.slice(0, cutPos).trim();
-  if (!/[。！？…♪]$/.test(out)) out += "。";
-  return out;
+  // 最後が導入やツッコミで終わっている場合に軽く畳む（任意）
+  if (!/[。！？…♪]$/.test(t)) t += "。";
+  return t;
 }
 
 /* =========================
@@ -130,7 +135,8 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
   } else {
     const usedTechs = pickTechniquesWithMetaphor();
     techniquesForMeta = usedTechs;
-    guideline = "【採用する技法（クライアント未指定のため自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
+    guideline =
+      "【採用する技法（クライアント未指定のため自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
   }
 
   const prompt = [
@@ -165,7 +171,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
    ========================= */
 const client = new OpenAI({
   apiKey: process.env.XAI_API_KEY, // ← xAIのAPIキー
-  baseURL: "https://api.x.ai/v1",     // ← 重要：xAIのベースURL
+  baseURL: "https://api.x.ai/v1", // ← /v1 を明示
 });
 const MODEL = process.env.XAI_MODEL || "grok-4";
 
@@ -176,7 +182,6 @@ function normalizeError(err) {
     message: err?.message,
     status: err?.status ?? err?.response?.status,
     data: err?.response?.data ?? err?.error,
-    // 本番では stack を返さない
     stack: process.env.NODE_ENV === "production" ? undefined : err?.stack,
   };
 }
@@ -213,13 +218,18 @@ export default async function handler(req, res) {
       { role: "user", content: prompt },
     ];
 
+    // ========== 追加: payloadBase ==========
+    const payloadBase = {
+      messages,
+      temperature: 0.8,
+      max_tokens: 10000, // ← 少し余裕
+    };
+
     let completion;
     try {
       completion = await client.chat.completions.create({
+        ...payloadBase,
         model: MODEL, // "grok-4"
-        messages,
-        temperature: 0.8,
-        max_tokens: 1400,
       });
     } catch (err) {
       const e = normalizeError(err);
