@@ -165,7 +165,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
    ========================= */
 const client = new OpenAI({
   apiKey: process.env.XAI_API_KEY, // ← xAIのAPIキー
-  baseURL: "https://api.x.ai",     // ← 重要：xAIのベースURL
+  baseURL: "https://api.x.ai/v1",     // ← 重要：xAIのベースURL
 });
 const MODEL = process.env.XAI_MODEL || "grok-4";
 
