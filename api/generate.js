@@ -39,10 +39,8 @@ const GENERAL_DEFS = {
   GYAKUHARI: "逆張り構成：期待・常識を外して予想を逆手に取る。",
   TENKAI_HAKAI: "展開破壊：築いた流れを意図的に壊し異質な要素を挿入。",
   KANCHIGAI_TEISEI: "勘違い→訂正：ボケの勘違いをツッコミが訂正する構成。",
-  SURECHIGAI:
-    "すれ違い：互いの前提が噛み合わずズレ続けて笑いを生む。",
-  TACHIBA_GYAKUTEN:
-    "立場逆転：途中または終盤で役割・地位がひっくり返る。",
+  SURECHIGAI: "すれ違い：互いの前提が噛み合わずズレ続けて笑いを生む。",
+  TACHIBA_GYAKUTEN: "立場逆転：途中または終盤で役割・地位がひっくり返る。",
 };
 
 /* =========================
@@ -50,19 +48,10 @@ const GENERAL_DEFS = {
    ========================= */
 const MUST_HAVE_TECH = "比喩ツッコミ";
 function pickTechniquesWithMetaphor() {
-  const pool = [
-    "風刺",
-    "皮肉",
-    "意外性と納得感",
-    "勘違い→訂正",
-    "言い間違い→すれ違い",
-    "立場逆転",
-    "具体例の誇張",
-  ];
+  const pool = ["風刺", "皮肉", "意外性と納得感", "勘違い→訂正", "言い間違い→すれ違い", "立場逆転", "具体例の誇張"];
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const extraCount = Math.floor(Math.random() * 3) + 1; // 1〜3
-  const extras = shuffled.slice(0, extraCount);
-  return [MUST_HAVE_TECH, ...extras]; // 合計2〜4
+  return [MUST_HAVE_TECH, ...shuffled.slice(0, extraCount)]; // 合計2〜4
 }
 
 /* =========================
@@ -73,7 +62,6 @@ function enforceCharLimit(text, maxLen) {
   let t = text.trim();
   t = t.replace(/```[\s\S]*?```/g, "").trim();
   t = t.replace(/^#{1,6}\s.*$/gm, "").trim();
-
   if (t.length <= maxLen) return t;
 
   const softCut = t.lastIndexOf("\n", maxLen);
@@ -142,8 +130,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
   } else {
     const usedTechs = pickTechniquesWithMetaphor();
     techniquesForMeta = usedTechs;
-    guideline =
-      "【採用する技法（クライアント未指定のため自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
+    guideline = "【採用する技法（クライアント未指定のため自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
   }
 
   const prompt = [
@@ -176,20 +163,22 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
 /* =========================
    6) Grok(xAI) 呼び出し（OpenAI SDK互換）
    ========================= */
-const openai = new OpenAI({
-  apiKey: process.env.XAI_API_KEY,     // ← GrokのAPIキー
-  baseURL: "https://api.x.ai",         // ← 重要：xAIエンドポイント
+const client = new OpenAI({
+  apiKey: process.env.XAI_API_KEY, // ← xAIのAPIキー
+  baseURL: "https://api.x.ai",     // ← 重要：xAIのベースURL
 });
-const PREFERRED_MODEL = process.env.XAI_MODEL || "grok-4";
-const FALLBACK_MODEL  = "grok-4";
+const MODEL = process.env.XAI_MODEL || "grok-4";
 
-async function createWithFallback(payloadBase) {
-  try {
-    return await openai.chat.completions.create({ ...payloadBase, model: PREFERRED_MODEL });
-  } catch (e) {
-    console.warn(`[generate] primary model failed (${PREFERRED_MODEL}). Fallback to ${FALLBACK_MODEL}.`, e?.message || e);
-    return await openai.chat.completions.create({ ...payloadBase, model: FALLBACK_MODEL });
-  }
+/* 失敗理由を分かりやすくする正規化 */
+function normalizeError(err) {
+  return {
+    name: err?.name,
+    message: err?.message,
+    status: err?.status ?? err?.response?.status,
+    data: err?.response?.data ?? err?.error,
+    // 本番では stack を返さない
+    stack: process.env.NODE_ENV === "production" ? undefined : err?.stack,
+  };
 }
 
 /* =========================
@@ -197,49 +186,63 @@ async function createWithFallback(payloadBase) {
    ========================= */
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
+    if (req.method !== "POST") {
+      return res.status(405).json({ error: "Method Not Allowed" });
+    }
 
-  const { theme, genre, characters, length, boke, tsukkomi, general } = req.body || {};
+    const { theme, genre, characters, length, boke, tsukkomi, general } = req.body || {};
 
-  const { prompt, techniquesForMeta, structureMeta, maxLen } = buildPrompt({
-    theme,
-    genre,
-    characters,
-    length,
-    selected: {
-      boke: Array.isArray(boke) ? boke : [],
-      tsukkomi: Array.isArray(tsukkomi) ? tsukkomi : [],
-      general: Array.isArray(general) ? general : [],
-    },
-  });
+    const { prompt, techniquesForMeta, structureMeta, maxLen } = buildPrompt({
+      theme,
+      genre,
+      characters,
+      length,
+      selected: {
+        boke: Array.isArray(boke) ? boke : [],
+        tsukkomi: Array.isArray(tsukkomi) ? tsukkomi : [],
+        general: Array.isArray(general) ? general : [],
+      },
+    });
 
-  const payloadBase = {
-    messages: [
+    const messages = [
       {
         role: "system",
         content:
           "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。メタ説明は禁止。",
       },
       { role: "user", content: prompt },
-    ],
-    temperature: 0.8,
-    max_tokens: 1400,
-  };
+    ];
 
-  const completion = await createWithFallback(payloadBase);
+    let completion;
+    try {
+      completion = await client.chat.completions.create({
+        model: MODEL, // "grok-4"
+        messages,
+        temperature: 0.8,
+        max_tokens: 1400,
+      });
+    } catch (err) {
+      const e = normalizeError(err);
+      console.error("[xAI error]", e);
+      return res.status(e.status || 500).json({
+        error: "xAI request failed",
+        detail: e, // ← ステータス・メッセージ・data を含む
+      });
+    }
 
-  const text = completion?.choices?.[0]?.message?.content?.trim() || "（ネタの生成に失敗しました）";
-  const finalText = enforceCharLimit(text, maxLen);
+    const text = completion?.choices?.[0]?.message?.content?.trim() || "";
+    const finalText = enforceCharLimit(text, maxLen);
 
-  return res.status(200).json({
-    text: finalText,
-    meta: {
-      structure: structureMeta,
-      techniques: techniquesForMeta,
-    },
-  });
+    return res.status(200).json({
+      text: finalText || "（ネタの生成に失敗しました）",
+      meta: {
+        structure: structureMeta,
+        techniques: techniquesForMeta,
+      },
+    });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: "Server Error" });
+    const e = normalizeError(err);
+    console.error("[handler error]", e);
+    return res.status(500).json({ error: "Server Error", detail: e });
   }
 }

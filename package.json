@@ -1,8 +1,17 @@
 {
   "name": "manzaimaker-backend",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "type": "module",
+  "description": "ManzaiMaker backend powered by xAI (Grok-4) API",
+  "main": "api/generate.js",
+  "scripts": {
+    "start": "node api/generate.js",
+    "dev": "vercel dev"
+  },
   "dependencies": {
     "openai": "^4.57.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
   }
 }
