@@ -1,4 +1,4 @@
-// api/credits/add.js
+// api/credit/add.js
 export const config = { runtime: "nodejs" };
 import { createClient } from "@supabase/supabase-js";
 
