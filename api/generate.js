@@ -81,6 +81,16 @@ function enforceCharLimit(text, maxLen) {
 }
 
 /* =========================
+   3.5) 最終行の強制付与（ツッコミ名：もういいよ）
+   ========================= */
+function ensureTsukkomiOutro(text, tsukkomiName = "B") {
+  if (!text) return `${tsukkomiName}：もういいよ`;
+  // 既に「もういいよ」で終わっていれば何もしない（話者名の有無どちらも許容）
+  if (/もういいよ\s*$/.test(text)) return text;
+  return text.replace(/\s*$/, "") + `\n${tsukkomiName}：もういいよ`;
+}
+
+/* =========================
    4) ガイドライン生成（選択技法→定義を埋め込む）
    ========================= */
 function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }) {
@@ -139,13 +149,16 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
       "【採用する技法（クライアント未指定のため自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
   }
 
+  // 最後に「ツッコミ役（=二人目）: もういいよ」で締める旨を明記
+  const tsukkomiName = names[1] || "B";
+
   const prompt = [
     "あなたは実力派の漫才師コンビです。自分たちの舞台用に日本語で漫才の台本（本文のみ）を作成してください。",
     "",
     `■題材: ${safeTheme}`,
     `■ジャンル: ${safeGenre}`,
     `■登場人物: ${names.join("、")}`,
-    `■目標文字数: ${minLen}〜${maxLen}文字（絶対に超過しない）`,
+    `■目標文字数: ${minLen}〜${maxLen}文字`,
     "",
     "■必須の構成",
     "- 1) フリ（導入の仕込み）…後半の展開に効く情報を自然に提示",
@@ -156,26 +169,25 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     guideline || "（特に指定なし。自然に面白く）",
     "",
     "■文体・出力ルール",
-    "- 全体として映画の三幕構成のような話とする",
-    "- 登場人物のキャラクター性を反映させる",
-    "- ボケとツッコミの役割を明確にする",
-    "- 人間にとって「意外性」がある表現を使う。しかし、「意外性」と直接本文に書かない。",
-    "- 「皮肉」や「比喩」や「風刺」と直接本文に書かない。",
-    "- 差別的表現は避ける",
-    "- **出力は本文のみ**。解説・注釈・見出し・『文字数：◯◯』等は書かない",
+    "- 会話主体で、人間が書いたような自然なテンポ・言い回しにする",
+    "- 登場人物ごとに `名前：台詞` の形式で台詞を記す",
+    "- 人間にとって「意外性」のある表現を使う。",
+    "- **最後の1行は必ずツッコミ役（2人目の登場人物）による「もういいよ」で終える**",
+    "- 最初の1行に【タイトル】を入れ、その直後に本文を続ける",
+    "- タイトルは1行、本文は会話形式。タイトルと本文の間に必ず空行を1つ入れる",
+    "- 解説や注釈は書かない。本文中に「タイトル：」などの語は入れない",
     "- 例: `A: ...\\nB: ...\\nA: ...` のように台詞ごとに改行",
-    "- 漫才の会話の最後はどちらかが「もういいよ」と言い、終わらせる。",
   ].join("\n");
 
-  return { prompt, techniquesForMeta, structureMeta, maxLen };
+  return { prompt, techniquesForMeta, structureMeta, maxLen, tsukkomiName };
 }
 
 /* =========================
    6) Grok(xAI) 呼び出し（OpenAI SDK互換）
    ========================= */
 const client = new OpenAI({
-  apiKey: process.env.XAI_API_KEY, // ← xAIのAPIキー
-  baseURL: "https://api.x.ai/v1", // ← /v1 を明示
+  apiKey: process.env.XAI_API_KEY,      // xAIのAPIキー
+  baseURL: "https://api.x.ai/v1",       // /v1 を明示
 });
 const MODEL = process.env.XAI_MODEL || "grok-4";
 
@@ -201,7 +213,7 @@ export default async function handler(req, res) {
 
     const { theme, genre, characters, length, boke, tsukkomi, general } = req.body || {};
 
-    const { prompt, techniquesForMeta, structureMeta, maxLen } = buildPrompt({
+    const { prompt, techniquesForMeta, structureMeta, maxLen, tsukkomiName } = buildPrompt({
       theme,
       genre,
       characters,
@@ -217,38 +229,38 @@ export default async function handler(req, res) {
       {
         role: "system",
         content:
-          "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。漫才のネタの最後はどちらかが「もういいよ」と言い、終わらせてください。メタ説明は禁止。",
+          "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。",
       },
       { role: "user", content: prompt },
     ];
 
-    // ========== 追加: payloadBase ==========
-    const payloadBase = {
-      messages,
-      temperature: 0.8,
-      max_tokens: 10000, // ← 少し余裕
-    };
-
+    // 生成
+    const payloadBase = { messages, temperature: 0.8, max_tokens: 2000 };
     let completion;
     try {
       completion = await client.chat.completions.create({
         ...payloadBase,
-        model: MODEL, // "grok-4"
+        model: MODEL,
       });
     } catch (err) {
       const e = normalizeError(err);
       console.error("[xAI error]", e);
-      return res.status(e.status || 500).json({
-        error: "xAI request failed",
-        detail: e, // ← ステータス・メッセージ・data を含む
-      });
+      return res.status(e.status || 500).json({ error: "xAI request failed", detail: e });
     }
 
-    const text = completion?.choices?.[0]?.message?.content?.trim() || "";
-    const finalText = enforceCharLimit(text, maxLen);
+    // モデル出力
+    let text = completion?.choices?.[0]?.message?.content?.trim() || "";
+
+    // 末尾の確保：アウトロ分の余白を確保してからカット
+    const outroLine = `${tsukkomiName}：もういいよ`;
+    const reserve = Math.max(8, outroLine.length + 1); // 改行込みの余白
+    const safeMax = Math.max(50, (Number(maxLen) || 350) - reserve);
+
+    text = enforceCharLimit(text, safeMax);
+    text = ensureTsukkomiOutro(text, tsukkomiName); // ★ 最後に必ず「ツッコミ名：もういいよ」を付与
 
     return res.status(200).json({
-      text: finalText || "（ネタの生成に失敗しました）",
+      text: text || "（ネタの生成に失敗しました）",
       meta: {
         structure: structureMeta,
         techniques: techniquesForMeta,
