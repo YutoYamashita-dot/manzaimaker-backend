@@ -156,7 +156,6 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     guideline || "（特に指定なし。自然に面白く）",
     "",
     "■文体・出力ルール",
-    "- 会話主体にする",
     "- 全体として映画の三幕構成のような話とする",
     "- 登場人物のキャラクター性を反映させる",
     "- ボケとツッコミの役割を明確にする",
