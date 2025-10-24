@@ -164,7 +164,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 差別的表現は避ける",
     "- **出力は本文のみ**。解説・注釈・見出し・『文字数：◯◯』等は書かない",
     "- 例: `A: ...\\nB: ...\\nA: ...` のように台詞ごとに改行",
-    "- ネタの最後は、「もういいよ」で終わらせる。",
+    "- 出力した本文の最後は「もういいよ」と本文に書き、終わらせる。",
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen };
