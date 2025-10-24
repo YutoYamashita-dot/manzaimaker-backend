@@ -344,7 +344,7 @@ export default async function handler(req, res) {
       { role: "user", content: prompt },
     ];
 
-    const payloadBase = { messages, temperature: 0.8, max_tokens: 2000 };
+    const payloadBase = { messages, temperature: 0.8, max_tokens: 8000 };
 
     let completion;
     try {
