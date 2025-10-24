@@ -6,7 +6,7 @@
   "main": "api/generate.js",
   "scripts": {
     "start": "node api/generate.js",
-    "dev": "vercel dev"
+    "dev-local": "vercel dev"
   },
   "dependencies": {
     "openai": "^4.57.0",
