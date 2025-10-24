@@ -1,8 +1,8 @@
 // api/generate.js
 // Vercel Node.js (ESM)。本文と「タイトル」を日本語で返す（台本のみ）
-// 必須: 環境変数 XAI_API_KEY
-// 任意: 環境変数 XAI_MODEL（未設定なら grok-4）
-// 追加: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY（ある場合は user_id が来た時に使用回数を保存）
+// 必須: XAI_API_KEY
+// 任意: XAI_MODEL（未設定なら grok-4）
+// 追加: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY（ある場合、user_id の回数/クレジットを保存）
 
 export const config = { runtime: "nodejs" };
 
@@ -15,10 +15,9 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const hasSupabase = !!(SUPABASE_URL && SUPABASE_KEY);
-
 const supabase = hasSupabase ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
-// usage_count を原子的に +delta（なければ作成）—※既存互換
+// 既存互換：使用回数を +delta（無ければ行を作成）
 async function incrementUsage(user_id, delta = 1) {
   if (!hasSupabase || !user_id) return null;
   try {
@@ -47,33 +46,65 @@ async function incrementUsage(user_id, delta = 1) {
   }
 }
 
-/* ===== 追加：無料上限＋有料クレジット対応 ===== */
-const FREE_LIMIT = 20;
+/* === ★ 追加：無料枠と有料クレジットの消費ユーティリティ（失敗時ロールバック対応） === */
+const FREE_QUOTA = 20;
 
 async function getUsageRow(user_id) {
-  if (!hasSupabase || !user_id) return { output_count: null, paid_credits: null };
+  if (!hasSupabase || !user_id) return { output_count: 0, paid_credits: 0 };
   const { data, error } = await supabase
     .from("user_usage")
     .select("output_count, paid_credits")
     .eq("user_id", user_id)
     .maybeSingle();
   if (error) throw error;
-  return {
-    output_count: data?.output_count ?? 0,
-    paid_credits: data?.paid_credits ?? 0,
-  };
+  return data || { output_count: 0, paid_credits: 0 };
 }
 
-async function upsertUsage(user_id, fields) {
+async function setUsageRow(user_id, { output_count, paid_credits }) {
   if (!hasSupabase || !user_id) return;
-  const payload = { user_id, updated_at: new Date().toISOString(), ...fields };
-  const { error } = await supabase.from("user_usage").upsert(payload);
+  const { error } = await supabase
+    .from("user_usage")
+    .upsert({
+      user_id,
+      output_count,
+      paid_credits,
+      updated_at: new Date().toISOString(),
+    });
   if (error) throw error;
 }
 
+/** 生成前：残高チェックのみ（消費はしない）。成功時 {ok:true}、不足時 {ok:false,row} を返す */
+async function checkCredit(user_id) {
+  if (!hasSupabase || !user_id) return { ok: true, row: null }; // 課金未使用構成なら常にOK
+  const row = await getUsageRow(user_id);
+  const used = row.output_count ?? 0;
+  const paid = row.paid_credits ?? 0;
+  if (used < FREE_QUOTA || paid > 0) return { ok: true, row };
+  return { ok: false, row };
+}
+
+/** 生成成功後：実消費（前払いではなく“後払い”で消費）。返却値は {consumed: "free"|"paid"|null} */
+async function consumeAfterSuccess(user_id) {
+  if (!hasSupabase || !user_id) return { consumed: null };
+  const row = await getUsageRow(user_id);
+  const used = row.output_count ?? 0;
+  const paid = row.paid_credits ?? 0;
+  // 無料枠が残っていれば無料枠を消費、無ければ有料クレジットを消費
+  if (used < FREE_QUOTA) {
+    await setUsageRow(user_id, { output_count: used + 1, paid_credits: paid });
+    return { consumed: "free" };
+  }
+  if (paid > 0) {
+    await setUsageRow(user_id, { output_count: used + 1, paid_credits: paid - 1 });
+    return { consumed: "paid" };
+  }
+  // ここに来るのは理論上不足（直前チェックと競合したなど）
+  return { consumed: null };
+}
+
 /* =========================
-1. 技法 定義テーブル（Android側 Enum 名に対応）
-========================= */
+   1) 技法 定義テーブル
+   ========================= */
 const BOKE_DEFS = {
   IIMACHIGAI:
     "言い間違い／聞き間違い：音韻のズレで意外性を生む（例：「カニ食べ行こう」→「紙食べ行こう？」）。",
@@ -82,8 +113,7 @@ const BOKE_DEFS = {
   GIJI_RONRI:
     "擬似論理ボケ：論理風だが中身がズレている（例：「犬は四足、だから社長」）。",
   TSUKKOMI_BOKE: "ツッコミボケ：ツッコミの発言が次のボケの伏線になる構造。",
-  RENSA:
-    "ボケの連鎖：ボケが次のボケを誘発するように連続させ、加速感を生む。",
+  RENSA: "ボケの連鎖：ボケが次のボケを誘発するように連続させ、加速感を生む。",
   KOTOBA_ASOBI: "言葉遊び：ダジャレ・韻・多義語などの言語的転倒。",
 };
 
@@ -93,8 +123,7 @@ const TSUKKOMI_DEFS = {
   AKIRE_REISEI:
     "呆れ・冷静ツッコミ：感情を抑えた冷静な態度で境界線を描く。",
   OKORI: "怒りツッコミ：強めの感情でズレを是正し笑いの対象を明確化。",
-  KYOKAN:
-    "共感ツッコミ：観客の立場・感情を代弁して共感の中で笑いを起こす。",
+  KYOKAN: "共感ツッコミ：観客の立場・感情を代弁して共感の中で笑いを起こす。",
   META: "メタツッコミ：漫才の形式・構造そのものを自覚的に指摘する視点。",
 };
 
@@ -108,34 +137,22 @@ const GENERAL_DEFS = {
 };
 
 /* =========================
-2) 旧仕様用：ランダム技法（「比喩ツッコミ」を必ず含む）
-========================= */
+   2) 旧仕様：ランダム技法
+   ========================= */
 const MUST_HAVE_TECH = "比喩ツッコミ";
 function pickTechniquesWithMetaphor() {
-  const pool = [
-    "風刺",
-    "皮肉",
-    "意外性と納得感",
-    "勘違い→訂正",
-    "言い間違い→すれ違い",
-    "立場逆転",
-    "具体例の誇張",
-  ];
+  const pool = ["風刺", "皮肉", "意外性と納得感", "勘違い→訂正", "言い間違い→すれ違い", "立場逆転", "具体例の誇張"];
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  const extraCount = Math.floor(Math.random() * 3) + 1; // 1〜3
-  return [MUST_HAVE_TECH, ...shuffled.slice(0, extraCount)]; // 合計2〜4
+  const extraCount = Math.floor(Math.random() * 3) + 1;
+  return [MUST_HAVE_TECH, ...shuffled.slice(0, extraCount)];
 }
 
 /* =========================
-3) 文字数の最終調整（末尾が不自然なら一文補う版）
-========================= */
+   3) 文字数の最終調整
+   ========================= */
 function enforceCharLimit(text, maxLen) {
   if (!text) return "";
-  let t = text
-    .trim()
-    .replace(/```[\s\S]*?```/g, "")
-    .replace(/^#{1,6}\s.*$/gm, "")
-    .trim();
+  let t = text.trim().replace(/```[\s\S]*?```/g, "").replace(/^#{1,6}\s.*$/gm, "").trim();
 
   if (t.length > maxLen) {
     const softCut = t.lastIndexOf("\n", maxLen);
@@ -146,16 +163,15 @@ function enforceCharLimit(text, maxLen) {
     t = t.slice(0, cutPos).trim();
     if (!/[。！？…♪]$/.test(t)) t += "。";
   }
-
   if (!/[。！？…♪]$/.test(t)) t += "。";
   return t;
 }
 
 /* =========================
-3.5) 最終行の強制付与（「名前: もういいよ」に統一）
-========================= */
+   3.5) 最終行の強制付与
+   ========================= */
 function ensureTsukkomiOutro(text, tsukkomiName = "B") {
-  const outro = `${tsukkomiName}: もういいよ`; // ← 半角コロン＋スペース
+  const outro = `${tsukkomiName}: もういいよ`;
   if (!text) return outro;
   if (/もういいよ\s*$/.test(text)) return text;
   return text.replace(/\s*$/, "") + "\n" + outro;
@@ -167,8 +183,8 @@ function normalizeSpeakerColons(s) {
 }
 
 /* =========================
-3.6) タイトルと本文の分割（先頭1行＝タイトル、空行のあと本文）
-========================= */
+   3.6) タイトル/本文の分割
+   ========================= */
 function splitTitleAndBody(s) {
   if (!s) return { title: "", body: "" };
   const parts = s.split(/\r?\n\r?\n/, 2);
@@ -178,8 +194,8 @@ function splitTitleAndBody(s) {
 }
 
 /* =========================
-4) ガイドライン生成（選択技法→定義を埋め込む）
-========================= */
+   4) ガイドライン生成
+   ========================= */
 function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }) {
   const bokeLines = boke.filter((k) => BOKE_DEFS[k]).map((k) => `- ${BOKE_DEFS[k]}`);
   const tsukkomiLines = tsukkomi.filter((k) => TSUKKOMI_DEFS[k]).map((k) => `- ${TSUKKOMI_DEFS[k]}`);
@@ -201,8 +217,8 @@ function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
 }
 
 /* =========================
-5) プロンプト生成
-========================= */
+   5) プロンプト生成
+   ========================= */
 function buildPrompt({ theme, genre, characters, length, selected }) {
   const safeTheme = theme && String(theme).trim() ? String(theme).trim() : "身近な題材";
   const safeGenre = genre && String(genre).trim() ? String(genre).trim() : "一般";
@@ -211,15 +227,13 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     .map((s) => s.trim())
     .filter(Boolean)
     .slice(0, 4);
+
   const targetLen = Math.min(Number(length) || 350, 2000);
   const minLen = Math.max(100, Math.floor(targetLen * 0.9));
   const maxLen = targetLen;
 
   const hasNewSelection =
-    (selected?.boke?.length || 0) +
-      (selected?.tsukkomi?.length || 0) +
-      (selected?.general?.length || 0) >
-    0;
+    (selected?.boke?.length || 0) + (selected?.tsukkomi?.length || 0) + (selected?.general?.length || 0) > 0;
 
   let techniquesForMeta = [];
   let guideline = "";
@@ -234,8 +248,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     const usedTechs = pickTechniquesWithMetaphor();
     techniquesForMeta = usedTechs;
     guideline =
-      "【採用する技法（クライアント未指定のため自動選択）】\n" +
-      usedTechs.map((t) => `- ${t}`).join("\n");
+      "【採用する技法（クライアント未指定のため自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
   }
 
   const tsukkomiName = names[1] || "B";
@@ -269,15 +282,17 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
 }
 
 /* =========================
-6) Grok(xAI) 呼び出し（OpenAI SDK互換）
-========================= */
+   6) Grok (xAI) 呼び出し
+   ========================= */
 const client = new OpenAI({
   apiKey: process.env.XAI_API_KEY,
   baseURL: "https://api.x.ai/v1",
 });
 const MODEL = process.env.XAI_MODEL || "grok-4";
 
-/* 失敗理由を分かりやすくする正規化 */
+/* =========================
+   失敗理由の整形
+   ========================= */
 function normalizeError(err) {
   return {
     name: err?.name,
@@ -289,40 +304,23 @@ function normalizeError(err) {
 }
 
 /* =========================
-7) HTTP ハンドラ（無料20回 / クレジット消費対応）
-========================= */
+   7) HTTP ハンドラ（失敗時にクレジットが減らないよう“後払い消費”）
+   ========================= */
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") {
-      return res.status(405).json({ error: "Method Not Allowed" });
-    }
+    if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
 
     const { theme, genre, characters, length, boke, tsukkomi, general, user_id } = req.body || {};
 
-    // ★ 追加：無料20回＋有料クレジットのゲート
-    let usageInfo = { output_count: null, paid_credits: null };
-    if (hasSupabase && user_id) {
-      try {
-        const { data, error } = await supabase
-          .from("user_usage")
-          .select("output_count, paid_credits")
-          .eq("user_id", user_id)
-          .maybeSingle();
-        if (error) throw error;
-        usageInfo.output_count = data?.output_count ?? 0;
-        usageInfo.paid_credits = data?.paid_credits ?? 0;
-
-        if (usageInfo.output_count >= FREE_LIMIT && usageInfo.paid_credits <= 0) {
-          return res.status(403).json({
-            error: `使用上限（${FREE_LIMIT}回）に達しました。クレジットを購入してください。`,
-            usage_count: usageInfo.output_count,
-            paid_credits: usageInfo.paid_credits,
-          });
-        }
-      } catch (e) {
-        console.warn("[supabase] read usage failed:", e?.message || e);
-        // 読み取り失敗時は許可する（安全側に倒す）
-      }
+    // 生成前：残高チェックのみ（消費はしない）
+    const gate = await checkCredit(user_id);
+    if (!gate.ok) {
+      const row = gate.row || { output_count: 0, paid_credits: 0 };
+      return res.status(403).json({
+        error: `使用上限（${FREE_QUOTA}回）に達しており、クレジットが不足しています。`,
+        usage_count: row.output_count,
+        paid_credits: row.paid_credits,
+      });
     }
 
     const { prompt, techniquesForMeta, structureMeta, maxLen, tsukkomiName } = buildPrompt({
@@ -354,54 +352,40 @@ export default async function handler(req, res) {
     } catch (err) {
       const e = normalizeError(err);
       console.error("[xAI error]", e);
+      // ★ ここではまだ消費していないのでロールバック不要（後払い方式）
       return res.status(e.status || 500).json({ error: "xAI request failed", detail: e });
     }
 
-    // モデル出力（タイトル＋本文の想定）
+    // 出力を整形
     let raw = completion?.choices?.[0]?.message?.content?.trim() || "";
     let { title, body } = splitTitleAndBody(raw);
-
-    // 末尾の確保：アウトロ分の余白を確保してから本文をカット
     const outroLine = `${tsukkomiName}: もういいよ`;
     const reserve = Math.max(8, outroLine.length + 1);
     const safeMax = Math.max(50, (Number(maxLen) || 350) - reserve);
-
     body = enforceCharLimit(body, safeMax);
     body = ensureTsukkomiOutro(body, tsukkomiName);
     body = normalizeSpeakerColons(body);
 
-    // ★ 成功したので使用回数/クレジット更新
-    let newUsage = null;
-    let newCredits = null;
+    // 生成成功とみなせる本文か軽くチェック
+    const success = body && body.length > 0;
+    if (!success) {
+      // ★ 失敗扱い：後払い方式なので消費なしのままエラー返却
+      return res.status(500).json({ error: "Empty output" });
+    }
+
+    // ★ 生成成功 → ここで初めて“実消費”（無料枠 or 有料クレジット）
+    await consumeAfterSuccess(user_id);
+
+    // 返却用：最新の残量取得
+    let metaUsage = null;
+    let metaCredits = null;
     if (hasSupabase && user_id) {
       try {
-        // 最新値を再取得
-        const { data, error } = await supabase
-          .from("user_usage")
-          .select("output_count, paid_credits")
-          .eq("user_id", user_id)
-          .maybeSingle();
-        if (error) throw error;
-
-        let usage = data?.output_count ?? 0;
-        let credits = data?.paid_credits ?? 0;
-
-        usage += 1; // 成功したので回数+1
-        if (usage > FREE_LIMIT && credits > 0) {
-          credits -= 1; // 無料枠を超えていれば有料クレジットを消費
-        }
-
-        await supabase.from("user_usage").upsert({
-          user_id,
-          output_count: usage,
-          paid_credits: credits,
-          updated_at: new Date().toISOString(),
-        });
-
-        newUsage = usage;
-        newCredits = credits;
+        const row = await getUsageRow(user_id);
+        metaUsage = row.output_count ?? null;
+        metaCredits = row.paid_credits ?? null;
       } catch (e) {
-        console.warn("[supabase] update usage failed:", e?.message || e);
+        console.warn("[supabase] fetch after consume failed:", e?.message || e);
       }
     }
 
@@ -411,8 +395,8 @@ export default async function handler(req, res) {
       meta: {
         structure: structureMeta,
         techniques: techniquesForMeta,
-        usage_count: newUsage,
-        paid_credits: newCredits,
+        usage_count: metaUsage,
+        paid_credits: metaCredits,
       },
     });
   } catch (err) {
