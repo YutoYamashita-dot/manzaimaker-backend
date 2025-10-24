@@ -8,8 +8,8 @@ export const config = { runtime: "nodejs" };
 import OpenAI from "openai";
 
 /* =========================
-   1) 技法 定義テーブル（Android側 Enum 名に対応）
-   ========================= */
+1. 技法 定義テーブル（Android側 Enum 名に対応）
+========================= */
 const BOKE_DEFS = {
   IIMACHIGAI:
     "言い間違い／聞き間違い：音韻のズレで意外性を生む（例：「カニ食べ行こう」→「紙食べ行こう？」）。",
@@ -44,19 +44,27 @@ const GENERAL_DEFS = {
 };
 
 /* =========================
-   2) 旧仕様用：ランダム技法（「比喩ツッコミ」を必ず含む）
-   ========================= */
+2) 旧仕様用：ランダム技法（「比喩ツッコミ」を必ず含む）
+========================= */
 const MUST_HAVE_TECH = "比喩ツッコミ";
 function pickTechniquesWithMetaphor() {
-  const pool = ["風刺", "皮肉", "意外性と納得感", "勘違い→訂正", "言い間違い→すれ違い", "立場逆転", "具体例の誇張"];
+  const pool = [
+    "風刺",
+    "皮肉",
+    "意外性と納得感",
+    "勘違い→訂正",
+    "言い間違い→すれ違い",
+    "立場逆転",
+    "具体例の誇張",
+  ];
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const extraCount = Math.floor(Math.random() * 3) + 1; // 1〜3
   return [MUST_HAVE_TECH, ...shuffled.slice(0, extraCount)]; // 合計2〜4
 }
 
 /* =========================
-   3) 文字数の最終調整（末尾が不自然なら一文補う版）
-   ========================= */
+3) 文字数の最終調整（末尾が不自然なら一文補う版）
+========================= */
 function enforceCharLimit(text, maxLen) {
   if (!text) return "";
   let t = text
@@ -80,8 +88,8 @@ function enforceCharLimit(text, maxLen) {
 }
 
 /* =========================
-   3.5) 最終行の強制付与（ツッコミ名：もういいよ）
-   ========================= */
+3.5) 最終行の強制付与（ツッコミ名：もういいよ）
+========================= */
 function ensureTsukkomiOutro(text, tsukkomiName = "B") {
   if (!text) return `${tsukkomiName}：もういいよ`;
   if (/もういいよ\s*$/.test(text)) return text;
@@ -89,8 +97,8 @@ function ensureTsukkomiOutro(text, tsukkomiName = "B") {
 }
 
 /* =========================
-   3.6) タイトルと本文の分割（先頭1行＝タイトル、空行のあと本文）
-   ========================= */
+3.6) タイトルと本文の分割（先頭1行＝タイトル、空行のあと本文）
+========================= */
 function splitTitleAndBody(s) {
   if (!s) return { title: "", body: "" };
   const parts = s.split(/\r?\n\r?\n/, 2);
@@ -100,8 +108,8 @@ function splitTitleAndBody(s) {
 }
 
 /* =========================
-   4) ガイドライン生成（選択技法→定義を埋め込む）
-   ========================= */
+4) ガイドライン生成（選択技法→定義を埋め込む）
+========================= */
 function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }) {
   const bokeLines = boke.filter((k) => BOKE_DEFS[k]).map((k) => `- ${BOKE_DEFS[k]}`);
   const tsukkomiLines = tsukkomi.filter((k) => TSUKKOMI_DEFS[k]).map((k) => `- ${TSUKKOMI_DEFS[k]}`);
@@ -116,7 +124,8 @@ function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }
 }
 
 function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
-  const toLabel = (ids, table) => ids.filter((k) => table[k]).map((k) => table[k].split("：")[0]);
+  const toLabel = (ids, table) =>
+    ids.filter((k) => table[k]).map((k) => table[k].split("：")[0]);
   return {
     boke: toLabel(boke, BOKE_DEFS),
     tsukkomi: toLabel(tsukkomi, TSUKKOMI_DEFS),
@@ -125,8 +134,8 @@ function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
 }
 
 /* =========================
-   5) プロンプト生成
-   ========================= */
+5) プロンプト生成
+========================= */
 function buildPrompt({ theme, genre, characters, length, selected }) {
   const safeTheme = theme && String(theme).trim() ? String(theme).trim() : "身近な題材";
   const safeGenre = genre && String(genre).trim() ? String(genre).trim() : "一般";
@@ -140,7 +149,10 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
   const maxLen = targetLen;
 
   const hasNewSelection =
-    (selected?.boke?.length || 0) + (selected?.tsukkomi?.length || 0) + (selected?.general?.length || 0) > 0;
+    (selected?.boke?.length || 0) +
+      (selected?.tsukkomi?.length || 0) +
+      (selected?.general?.length || 0) >
+    0;
 
   let techniquesForMeta = [];
   let guideline = "";
@@ -155,7 +167,8 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     const usedTechs = pickTechniquesWithMetaphor();
     techniquesForMeta = usedTechs;
     guideline =
-      "【採用する技法（クライアント未指定のため自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
+      "【採用する技法（クライアント未指定のため自動選択）】\n" +
+      usedTechs.map((t) => `- ${t}`).join("\n");
   }
 
   // 最後はツッコミ役（2人目）で締める
@@ -178,20 +191,20 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     guideline || "（特に指定なし）",
     "",
     "■文体・出力ルール",
-    "- **最後の1行は必ずツッコミ役（2人目の登場人物）による「もういいよ」で終える**"
+    "- 最後の1行は必ずツッコミ役（2人目の登場人物）による「もういいよ」で終える",
     "- 最初の1行に【タイトル】を入れ、その直後に本文（会話）を続ける",
     "- タイトルと本文の間には必ず空行を1つ入れる",
-    "- 会話は `名前：台詞` 形式で、1台詞ごとに改行",
+    "- 会話は 名前：台詞 形式で、1台詞ごとに改行",
     "- 解説・注釈・見出しは書かない。本文のみを出力する",
-    "- 人間にとって「意外性」のある表現を使う。", 
+    "- 人間にとって「意外性」のある表現を使う。",
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, tsukkomiName };
 }
 
 /* =========================
-   6) Grok(xAI) 呼び出し（OpenAI SDK互換）
-   ========================= */
+6) Grok(xAI) 呼び出し（OpenAI SDK互換）
+========================= */
 const client = new OpenAI({
   apiKey: process.env.XAI_API_KEY,
   baseURL: "https://api.x.ai/v1",
@@ -210,8 +223,8 @@ function normalizeError(err) {
 }
 
 /* =========================
-   7) HTTP ハンドラ
-   ========================= */
+7) HTTP ハンドラ
+========================= */
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") {
