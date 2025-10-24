@@ -2,10 +2,56 @@
 // Vercel Node.js (ESM)。本文と「タイトル」を日本語で返す（台本のみ）
 // 必須: 環境変数 XAI_API_KEY
 // 任意: 環境変数 XAI_MODEL（未設定なら grok-4）
+// 追加: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY（ある場合は user_id が来た時に使用回数を保存）
 
 export const config = { runtime: "nodejs" };
 
 import OpenAI from "openai";
+import { createClient } from "@supabase/supabase-js";
+
+/* =========================
+   Supabase Client
+   ========================= */
+const SUPABASE_URL = process.env.SUPABASE_URL || "";
+const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
+const hasSupabase = !!(SUPABASE_URL && SUPABASE_KEY);
+
+const supabase = hasSupabase
+  ? createClient(SUPABASE_URL, SUPABASE_KEY)
+  : null;
+
+// usage_count を原子的に +delta（なければ作成）
+async function incrementUsage(user_id, delta = 1) {
+  if (!hasSupabase || !user_id) return null;
+  try {
+    // 現在値取得
+    const { data, error } = await supabase
+      .from("user_usage")
+      .select("output_count")
+      .eq("user_id", user_id)
+      .maybeSingle();
+
+    if (error) throw error;
+
+    const current = data?.output_count ?? 0;
+    const next = current + Math.max(delta, 0);
+
+    // upsert
+    const { error: upErr } = await supabase
+      .from("user_usage")
+      .upsert({
+        user_id,
+        output_count: next,
+        updated_at: new Date().toISOString(),
+      });
+
+    if (upErr) throw upErr;
+    return next;
+  } catch (e) {
+    console.warn("[supabase] incrementUsage failed:", e?.message || e);
+    return null; // 失敗してもAPI自体は成功させる
+  }
+}
 
 /* =========================
 1. 技法 定義テーブル（Android側 Enum 名に対応）
@@ -194,7 +240,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 2) 伏線回収",
     "- 3) 最後は明確な“オチ”",
     "",
-    "■選択された技法（名称は本文に出さないこと）",
+    "■選択された技法（技法の名称は本文に出さないこと）",
     guideline || "（特に指定なし）",
     "",
     "■文体・出力ルール",
@@ -238,7 +284,7 @@ export default async function handler(req, res) {
       return res.status(405).json({ error: "Method Not Allowed" });
     }
 
-    const { theme, genre, characters, length, boke, tsukkomi, general } = req.body || {};
+    const { theme, genre, characters, length, boke, tsukkomi, general, user_id } = req.body || {};
 
     const { prompt, techniquesForMeta, structureMeta, maxLen, tsukkomiName } = buildPrompt({
       theme,
@@ -277,7 +323,7 @@ export default async function handler(req, res) {
     let { title, body } = splitTitleAndBody(raw);
 
     // 末尾の確保：アウトロ分の余白を確保してから本文をカット
-    const outroLine = `${tsukkomiName}: もういいよ`; // ← 半角コロン＋スペースに変更
+    const outroLine = `${tsukkomiName}: もういいよ`; // ← 半角コロン＋スペース
     const reserve = Math.max(8, outroLine.length + 1); // 改行込み余白
     const safeMax = Math.max(50, (Number(maxLen) || 350) - reserve);
 
@@ -287,12 +333,19 @@ export default async function handler(req, res) {
     // 行頭の話者コロンを「: 」に正規化（任意だが安全）
     body = normalizeSpeakerColons(body);
 
+    // ★ 成功したので Supabase の usage_count を +1（user_id のみ）
+    let newUsage = null;
+    if (hasSupabase && user_id) {
+      newUsage = await incrementUsage(user_id, 1);
+    }
+
     return res.status(200).json({
       title: title || "（タイトル未設定）",
       text: body || "（ネタの生成に失敗しました）",
       meta: {
         structure: structureMeta,
         techniques: techniquesForMeta,
+        usage_count: newUsage, // 追加：サーバ保存された使用回数（null の場合もあり）
       },
     });
   } catch (err) {
