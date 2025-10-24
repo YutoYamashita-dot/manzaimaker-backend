@@ -1,5 +1,5 @@
 // api/generate.js
-// Vercel Node.js (ESM)。本文のみを日本語で返す（台本だけ）
+// Vercel Node.js (ESM)。本文と「タイトル」を日本語で返す（台本のみ）
 // 必須: 環境変数 XAI_API_KEY
 // 任意: 環境変数 XAI_MODEL（未設定なら grok-4）
 
@@ -13,7 +13,7 @@ import OpenAI from "openai";
 const BOKE_DEFS = {
   IIMACHIGAI:
     "言い間違い／聞き間違い：音韻のズレで意外性を生む（例：「カニ食べ行こう」→「紙食べ行こう？」）。",
-  HIYU: "比喩ボケ：日常を比喩で誇張（例：「あいつカフェインみたいに効かない」）。",
+  HIYU: "比喩ボケ：日常を比喩で誇張",
   GYAKUSETSU: "逆説ボケ：一見正論に聞こえるが論理が破綻している。",
   GIJI_RONRI:
     "擬似論理ボケ：論理風だが中身がズレている（例：「犬は四足、だから社長」）。",
@@ -75,7 +75,6 @@ function enforceCharLimit(text, maxLen) {
     if (!/[。！？…♪]$/.test(t)) t += "。";
   }
 
-  // 最後が導入やツッコミで終わっている場合に軽く畳む（任意）
   if (!/[。！？…♪]$/.test(t)) t += "。";
   return t;
 }
@@ -85,9 +84,19 @@ function enforceCharLimit(text, maxLen) {
    ========================= */
 function ensureTsukkomiOutro(text, tsukkomiName = "B") {
   if (!text) return `${tsukkomiName}：もういいよ`;
-  // 既に「もういいよ」で終わっていれば何もしない（話者名の有無どちらも許容）
   if (/もういいよ\s*$/.test(text)) return text;
   return text.replace(/\s*$/, "") + `\n${tsukkomiName}：もういいよ`;
+}
+
+/* =========================
+   3.6) タイトルと本文の分割（先頭1行＝タイトル、空行のあと本文）
+   ========================= */
+function splitTitleAndBody(s) {
+  if (!s) return { title: "", body: "" };
+  const parts = s.split(/\r?\n\r?\n/, 2);
+  const title = (parts[0] || "").trim().replace(/^【|】$/g, "");
+  const body = (parts[1] ?? s).trim();
+  return { title, body };
 }
 
 /* =========================
@@ -149,11 +158,11 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
       "【採用する技法（クライアント未指定のため自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
   }
 
-  // 最後に「ツッコミ役（=二人目）: もういいよ」で締める旨を明記
+  // 最後はツッコミ役（2人目）で締める
   const tsukkomiName = names[1] || "B";
 
   const prompt = [
-    "あなたは実力派の漫才師コンビです。自分たちの舞台用に日本語で漫才の台本（本文のみ）を作成してください。",
+    "あなたは実力派の漫才師コンビです。日本語の漫才台本を作成してください。",
     "",
     `■題材: ${safeTheme}`,
     `■ジャンル: ${safeGenre}`,
@@ -161,22 +170,20 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     `■目標文字数: ${minLen}〜${maxLen}文字`,
     "",
     "■必須の構成",
-    "- 1) フリ（導入の仕込み）…後半の展開に効く情報を自然に提示",
-    "- 2) 伏線回収…前半の仕込みを後半で回収して気持ちよく接続",
-    "- 3) 最後は明確な“オチ”で締める（余韻よりも落ちを優先）",
+    "- 1) フリ（導入）",
+    "- 2) 伏線回収",
+    "- 3) 最後は明確な“オチ”",
     "",
-    "■選択された技法ガイドライン（必ず本文で顕在化。その「技法の名称」は本文に直接書かない）",
-    guideline || "（特に指定なし。自然に面白く）",
+    "■選択された技法（名称は本文に出さないこと）",
+    guideline || "（特に指定なし）",
     "",
     "■文体・出力ルール",
-    "- 会話主体で、人間が書いたような自然なテンポ・言い回しにする",
-    "- 登場人物ごとに `名前：台詞` の形式で台詞を記す",
-    "- 人間にとって「意外性」のある表現を使う。",
-    "- **最後の1行は必ずツッコミ役（2人目の登場人物）による「もういいよ」で終える**",
-    "- 最初の1行に【タイトル】を入れ、その直後に本文を続ける",
-    "- タイトルは1行、本文は会話形式。タイトルと本文の間に必ず空行を1つ入れる",
-    "- 解説や注釈は書かない。本文中に「タイトル：」などの語は入れない",
-    "- 例: `A: ...\\nB: ...\\nA: ...` のように台詞ごとに改行",
+    "- **最後の1行は必ずツッコミ役（2人目の登場人物）による「もういいよ」で終える**"
+    "- 最初の1行に【タイトル】を入れ、その直後に本文（会話）を続ける",
+    "- タイトルと本文の間には必ず空行を1つ入れる",
+    "- 会話は `名前：台詞` 形式で、1台詞ごとに改行",
+    "- 解説・注釈・見出しは書かない。本文のみを出力する",
+    "- 人間にとって「意外性」のある表現を使う。", 
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, tsukkomiName };
@@ -186,8 +193,8 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
    6) Grok(xAI) 呼び出し（OpenAI SDK互換）
    ========================= */
 const client = new OpenAI({
-  apiKey: process.env.XAI_API_KEY,      // xAIのAPIキー
-  baseURL: "https://api.x.ai/v1",       // /v1 を明示
+  apiKey: process.env.XAI_API_KEY,
+  baseURL: "https://api.x.ai/v1",
 });
 const MODEL = process.env.XAI_MODEL || "grok-4";
 
@@ -234,33 +241,32 @@ export default async function handler(req, res) {
       { role: "user", content: prompt },
     ];
 
-    // 生成
     const payloadBase = { messages, temperature: 0.8, max_tokens: 2000 };
+
     let completion;
     try {
-      completion = await client.chat.completions.create({
-        ...payloadBase,
-        model: MODEL,
-      });
+      completion = await client.chat.completions.create({ ...payloadBase, model: MODEL });
     } catch (err) {
       const e = normalizeError(err);
       console.error("[xAI error]", e);
       return res.status(e.status || 500).json({ error: "xAI request failed", detail: e });
     }
 
-    // モデル出力
-    let text = completion?.choices?.[0]?.message?.content?.trim() || "";
+    // モデル出力（タイトル＋本文の想定）
+    let raw = completion?.choices?.[0]?.message?.content?.trim() || "";
+    let { title, body } = splitTitleAndBody(raw);
 
-    // 末尾の確保：アウトロ分の余白を確保してからカット
+    // 末尾の確保：アウトロ分の余白を確保してから本文をカット
     const outroLine = `${tsukkomiName}：もういいよ`;
-    const reserve = Math.max(8, outroLine.length + 1); // 改行込みの余白
+    const reserve = Math.max(8, outroLine.length + 1); // 改行込み余白
     const safeMax = Math.max(50, (Number(maxLen) || 350) - reserve);
 
-    text = enforceCharLimit(text, safeMax);
-    text = ensureTsukkomiOutro(text, tsukkomiName); // ★ 最後に必ず「ツッコミ名：もういいよ」を付与
+    body = enforceCharLimit(body, safeMax);
+    body = ensureTsukkomiOutro(body, tsukkomiName);
 
     return res.status(200).json({
-      text: text || "（ネタの生成に失敗しました）",
+      title: title || "（タイトル未設定）",
+      text: body || "（ネタの生成に失敗しました）",
       meta: {
         structure: structureMeta,
         techniques: techniquesForMeta,
