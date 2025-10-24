@@ -164,7 +164,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 差別的表現は避ける",
     "- **出力は本文のみ**。解説・注釈・見出し・『文字数：◯◯』等は書かない",
     "- 例: `A: ...\\nB: ...\\nA: ...` のように台詞ごとに改行",
-    "- 出力した本文の最後は「もういいよ」と本文に書き、終わらせる。",
+    "- 漫才の会話の最後はどちらかが「もういいよ」と言い、終わらせる。",
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen };
@@ -217,7 +217,7 @@ export default async function handler(req, res) {
       {
         role: "system",
         content:
-          "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。メタ説明は禁止。",
+          "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。漫才のネタの最後はどちらかが「もういいよ」と言い、終わらせてください。メタ説明は禁止。",
       },
       { role: "user", content: prompt },
     ];
