@@ -88,12 +88,19 @@ function enforceCharLimit(text, maxLen) {
 }
 
 /* =========================
-3.5) 最終行の強制付与（ツッコミ名：もういいよ）
+3.5) 最終行の強制付与（「名前: もういいよ」に統一）
 ========================= */
 function ensureTsukkomiOutro(text, tsukkomiName = "B") {
-  if (!text) return `${tsukkomiName}：もういいよ`;
+  const outro = `${tsukkomiName}: もういいよ`; // ← 半角コロン＋スペース
+  if (!text) return outro;
   if (/もういいよ\s*$/.test(text)) return text;
-  return text.replace(/\s*$/, "") + `\n${tsukkomiName}：もういいよ`;
+  return text.replace(/\s*$/, "") + "\n" + outro;
+}
+
+/* （任意）行頭の「名前：/名前:」を「名前: 」に正規化 */
+function normalizeSpeakerColons(s) {
+  // 行頭（または改行直後）の「任意の話者名 + 全角/半角コロン + 任意空白」→ 半角コロン＋スペースに統一
+  return s.replace(/(^|\n)([^\n:：]+)[：:]\s*/g, (_m, head, name) => `${head}${name}: `);
 }
 
 /* =========================
@@ -270,12 +277,15 @@ export default async function handler(req, res) {
     let { title, body } = splitTitleAndBody(raw);
 
     // 末尾の確保：アウトロ分の余白を確保してから本文をカット
-    const outroLine = `${tsukkomiName}：もういいよ`;
+    const outroLine = `${tsukkomiName}: もういいよ`; // ← 半角コロン＋スペースに変更
     const reserve = Math.max(8, outroLine.length + 1); // 改行込み余白
     const safeMax = Math.max(50, (Number(maxLen) || 350) - reserve);
 
     body = enforceCharLimit(body, safeMax);
     body = ensureTsukkomiOutro(body, tsukkomiName);
+
+    // 行頭の話者コロンを「: 」に正規化（任意だが安全）
+    body = normalizeSpeakerColons(body);
 
     return res.status(200).json({
       title: title || "（タイトル未設定）",
