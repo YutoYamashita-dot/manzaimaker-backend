@@ -448,11 +448,35 @@ export default async function handler(req, res) {
     body = enforceCharLimit(body, minLen, maxLen, false);
     body = ensureSingleOutro(body, tsukkomiName); // ★ 調整で消えても必ず 1 回に
 
+    // ★ ここで「指定文字数より10%以上少ない」なら絶対にクレジットを減らさない
+    const actualLen = body.length;
+    const minRequired = Math.ceil((Number(length) || 350) * 0.9);
+    const isTooShort = actualLen < minRequired;
+
     // 成功判定：本文非空のみ
     const success = typeof body === "string" && body.trim().length > 0;
     if (!success) {
       // 失敗：消費しない
       return res.status(500).json({ error: "Empty output" });
+    }
+
+    // 成功だが短すぎる場合：本文は返すがクレジットは絶対に減らさない
+    if (isTooShort) {
+      return res.status(200).json({
+        title: title || "（タイトル未設定）",
+        text: body,
+        meta: {
+          structure: structureMeta,
+          techniques: techniquesForMeta,
+          usage_count: (await getUsageRow(user_id)).output_count, // 変化なし
+          paid_credits: (await getUsageRow(user_id)).paid_credits, // 変化なし
+          target_length: targetLen,
+          min_required_length: minRequired,
+          actual_length: actualLen,
+          credit_consumed: false,               // ★ 課金消費なしを明示
+          note: "Output length below 90% of requested; credit not consumed.",
+        },
+      });
     }
 
     // 成功：ここで初めて消費（無料枠はリクエストごとの currentFreeQuota で判定）
@@ -483,6 +507,7 @@ export default async function handler(req, res) {
         min_length: minLen,
         max_length: maxLen,
         actual_length: body.length,
+        credit_consumed: true, // 消費済み
       },
     });
   } catch (err) {
