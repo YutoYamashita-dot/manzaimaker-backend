@@ -428,7 +428,7 @@ export default async function handler(req, res) {
       try {
         body = await generateContinuation({
           client,
-          model: process.env.OPENAI_MODEL || "gpt-4o",
+          model: process.env.OPENAI_MODEL || "gpt-5",
           baseBody: body,
           remainingChars: deficit,
           tsukkomiName,
