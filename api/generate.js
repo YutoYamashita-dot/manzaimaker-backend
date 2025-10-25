@@ -369,7 +369,7 @@ function normalizeError(err) {
 }
 
 /* =========================
-  7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）
+  7) HTTP ハンドラ（後払い消費＋安定出力のための緩和＋短文免除）
 ========================= */
 export default async function handler(req, res) {
   try {
@@ -424,7 +424,7 @@ export default async function handler(req, res) {
       return res.status(e.status || 500).json({ error: "xAI request failed", detail: e });
     }
 
-    // 整形（★順序を安定化：normalize → 空行 → 落ち付与）
+    // 整形（順序：正規化 → 空行 → 一旦アウトロ付与 → 最終一回化 → 文字数調整 → 再度一回化）
     let raw = completion?.choices?.[0]?.message?.content?.trim() || "";
     let { title, body } = splitTitleAndBody(raw);
 
@@ -432,41 +432,45 @@ export default async function handler(req, res) {
     body = normalizeSpeakerColons(body);
     body = ensureBlankLineBetweenTurns(body);
     body = ensureTsukkomiOutro(body, tsukkomiName);
-    body = ensureSingleOutro(body, tsukkomiName); // ★ ちょうど1回に統一
+    body = ensureSingleOutro(body, tsukkomiName); // ★ 最後は“ちょうど1回だけ”
 
-    // 指定文字数との差を補う
-    const deficit = targetLen - body.length;
-    if (deficit >= 30) {
-      try {
-        body = await generateContinuation({
-          client,
-          model: process.env.XAI_MODEL || "grok-4",
-          baseBody: body,
-          remainingChars: deficit,
-          tsukkomiName,
-        });
-        // 追記後も同じ順序で仕上げ
-        body = normalizeSpeakerColons(body);
-        body = ensureBlankLineBetweenTurns(body);
-        body = ensureTsukkomiOutro(body, tsukkomiName);
-        body = ensureSingleOutro(body, tsukkomiName); // ★ ちょうど1回に統一
-      } catch (e) {
-        console.warn("[continuation] failed:", e?.message || e);
-      }
-    }
-
-    // ★ 最終レンジ調整：上下10%の範囲に収める（allowOverflow=false）
+    // 文字数の最終レンジ調整（±10%）
     body = enforceCharLimit(body, minLen, maxLen, false);
-    body = ensureSingleOutro(body, tsukkomiName); // ★ 調整後も“最後に1回だけ”を保証
+    body = ensureSingleOutro(body, tsukkomiName); // ★ 調整で消えても必ず 1 回に
 
-    // 成功判定：★本文非空のみ（語尾揺れで落とさない）
+    // ---- ★★ ここが堅牢化ポイント（短文免除）★★ ----
+    // 指定文字数の 90% 未満（= 10%以上少ない）なら、絶対にクレジットを減らさない
+    const minRequired = Math.floor(targetLen * 0.9);
+    const tooShort = body.length < minRequired;
+
+    // 成功判定：本文非空のみ（短文でも本文は返す）
     const success = typeof body === "string" && body.trim().length > 0;
     if (!success) {
       // 失敗：消費しない
       return res.status(500).json({ error: "Empty output" });
     }
 
-    // 成功：ここで初めて消費
+    if (tooShort) {
+      // 10%以上短い → クレジットは絶対に減らさない（本文は返す）
+      return res.status(200).json({
+        title: title || "（タイトル未設定）",
+        text: body,
+        meta: {
+          structure: structureMeta,
+          techniques: techniquesForMeta,
+          usage_count: (await getUsageRow(user_id)).output_count ?? null,
+          paid_credits: (await getUsageRow(user_id)).paid_credits ?? null,
+          target_length: targetLen,
+          min_length: minLen,
+          max_length: maxLen,
+          actual_length: body.length,
+          credit_consumed: false,
+          reason: "below_90_percent",
+        },
+      });
+    }
+
+    // 成功かつ規定文字数域を満たす：ここで初めて消費
     await consumeAfterSuccess(user_id);
 
     // 残量取得
@@ -494,6 +498,7 @@ export default async function handler(req, res) {
         min_length: minLen,
         max_length: maxLen,
         actual_length: body.length,
+        credit_consumed: true,
       },
     });
   } catch (err) {
@@ -503,3 +508,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server Error", detail: e });
   }
 }
+
