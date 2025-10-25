@@ -438,10 +438,8 @@ export default async function handler(req, res) {
       }
     }
 
-    // 最終レンジ調整：★上限で切らない（落ち欠落を防ぐ）
-    body = enforceCharLimit(body, minLen, Number.MAX_SAFE_INTEGER, true);
-    // 念のため“落ち”を再付与
-    if (!/もういいよ\s*$/m.test(body)) body = ensureTsukkomiOutro(body, tsukkomiName);
+    // ★ 最終レンジ調整：上下10%の範囲に収める（allowOverflow=false）
+    body = enforceCharLimit(body, minLen, maxLen, false);
 
     // 成功判定：★本文非空のみ（語尾揺れで落とさない）
     const success = typeof body === "string" && body.trim().length > 0;
