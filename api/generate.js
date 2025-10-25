@@ -323,13 +323,13 @@ const messages = [
 { role: "user", content: contPrompt },
 ];
 
-// ▼▼ 修正：OpenAIは max_tokens のみ有効。上限も控えめに ▼▼
+// ※ このモデルは max_tokens ではなく max_completion_tokens を要求
 const approxTok = Math.min(4096, Math.max(Math.ceil(remainingChars * 2), 400));
 const resp = await client.chat.completions.create({
 model,
 messages,
 temperature: 0.8,
-max_tokens: approxTok,
+max_completion_tokens: approxTok,
 });
 
 let cont = resp?.choices?.[0]?.message?.content?.trim() || "";
@@ -392,8 +392,7 @@ const { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, 
   },  
 });  
 
-// モデル呼び出し（OpenAIは max_tokens を参照）  
-// ▼▼ 修正：上限を控えめに ▼▼
+// モデル呼び出し（このモデルは max_completion_tokens を要求）
 const approxMaxTok = Math.min(4096, Math.max(Math.ceil(maxLen * 2), 1200));  
 const messages = [  
   { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },  
@@ -403,7 +402,7 @@ const payload = {
   model: process.env.OPENAI_MODEL || "gpt-5",  
   messages,  
   temperature: 0.8,  
-  max_tokens: approxMaxTok,  
+  max_completion_tokens: approxMaxTok,  
 };  
 
 let completion;  
@@ -411,7 +410,6 @@ try {
   completion = await client.chat.completions.create(payload);  
 } catch (err) {  
   const e = normalizeError(err);  
-  // ▼▼ 修正：ログ文言・レスポンス文言を OpenAI 用に ▼▼
   console.error("[openai error]", e);  
   // 後払い方式：ここでは消費しない  
   return res.status(e.status || 500).json({ error: "openai request failed", detail: e });  
