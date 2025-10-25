@@ -283,6 +283,8 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- タイトルと本文の間には必ず空行を1つ入れる",
     "■その他",
 　　 "- 人間にとって「意外性」のある表現を使う。",
+　　 "- 登場人物のキャラクター性を反映させる。",
+
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName };
