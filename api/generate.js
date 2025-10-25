@@ -1,3 +1,4 @@
+
 // api/generate.js
 // Vercel Node.js (ESM)。本文と「タイトル」を日本語で返す（台本のみ）
 // 必須: XAI_API_KEY
@@ -10,7 +11,7 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 
 /* =========================
-  Supabase Client
+Supabase Client
 ========================= */
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
@@ -18,7 +19,7 @@ const hasSupabase = !!(SUPABASE_URL && SUPABASE_KEY);
 const supabase = hasSupabase ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 /* =========================
-  既存互換ユーティリティ（そのまま維持）
+既存互換ユーティリティ（そのまま維持）
 ========================= */
 async function incrementUsage(user_id, delta = 1) {
   if (!hasSupabase || !user_id) return null;
@@ -93,7 +94,8 @@ async function consumeAfterSuccess(user_id) {
 }
 
 /* =========================
-  1. 技法 定義テーブル（削除せず維持）
+
+1. 技法 定義テーブル（削除せず維持）
 ========================= */
 const BOKE_DEFS = {
   IIMACHIGAI:
@@ -125,7 +127,7 @@ const GENERAL_DEFS = {
 };
 
 /* =========================
-  2) 旧仕様：ランダム技法（維持）
+2) 旧仕様：ランダム技法（維持）
 ========================= */
 const MUST_HAVE_TECH = "比喩ツッコミ";
 function pickTechniquesWithMetaphor() {
@@ -136,11 +138,15 @@ function pickTechniquesWithMetaphor() {
 }
 
 /* =========================
-  3) 文字数の最終調整
+3) 文字数の最終調整
 ========================= */
 function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
   if (!text) return "";
-  let t = text.trim().replace(/```[\s\S]*?```/g, "").replace(/^#{1,6}\s.*$/gm, "").trim();
+  let t = text
+    .trim()
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/^#{1,6}\s.*$/gm, "")
+    .trim();
 
   if (!allowOverflow && t.length > maxLen) {
     const softCut = t.lastIndexOf("\n", maxLen);
@@ -156,7 +162,7 @@ function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
 }
 
 /* =========================
-  3.5) 最終行の強制付与
+3.5) 最終行の強制付与
 ========================= */
 function ensureTsukkomiOutro(text, tsukkomiName = "B") {
   const outro = `${tsukkomiName}: もういいよ`;
@@ -167,11 +173,17 @@ function ensureTsukkomiOutro(text, tsukkomiName = "B") {
 
 /* === ★ 追加：最後の「もういいよ」を“ちょうど1回だけ”にする === */
 function ensureSingleOutro(text, tsukkomiName = "B") {
-  const required = `${tsukkomiName}: もういいよ`;
+  // tsukkomiName + （全角/半角コロン）+ 任意空白 + 「もういいよ」 + 句読点や空白の揺れを吸収
+  const outroLoose = new RegExp(
+    `^\\s*${tsukkomiName}[：: ]*もういいよ[。\\s]*$`,
+    "i"
+  );
   const lines = (text || "").replace(/\r\n/g, "\n").split("\n");
-  const filtered = lines.filter((ln) => ln.trim() !== required);
+  const filtered = lines.filter((ln) => !outroLoose.test(ln.trim()));
+  // 末尾空行除去
   while (filtered.length > 0 && filtered[filtered.length - 1].trim() === "") filtered.pop();
-  return [...filtered, required].join("\n");
+  // 最後に1回だけ付与
+  return [...filtered, `${tsukkomiName}: もういいよ`].join("\n");
 }
 
 /* 行頭の「名前：/名前:」を「名前: 」に正規化 */
@@ -193,7 +205,7 @@ function ensureBlankLineBetweenTurns(text) {
     out.push(cur);
     const isTurn = /^[^:\n：]+:\s/.test(cur.trim());
     const next = compressed[i + 1];
-    const nextIsTurn = next != null && /^[^:\n：]+:\s/.test(next?.trim() || "");
+    const nextIsTurn = next != null && /^[^:\n：]+:\s/.test((next || "").trim());
     if (isTurn && nextIsTurn) {
       if (cur.trim() !== "" && (next || "").trim() !== "") out.push("");
     }
@@ -202,7 +214,7 @@ function ensureBlankLineBetweenTurns(text) {
 }
 
 /* =========================
-  3.6) タイトル/本文の分割
+3.6) タイトル/本文の分割
 ========================= */
 function splitTitleAndBody(s) {
   if (!s) return { title: "", body: "" };
@@ -213,7 +225,7 @@ function splitTitleAndBody(s) {
 }
 
 /* =========================
-  4) ガイドライン生成（維持）
+4) ガイドライン生成（維持）
 ========================= */
 function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }) {
   const bokeLines = boke.filter((k) => BOKE_DEFS[k]).map((k) => `- ${BOKE_DEFS[k]}`);
@@ -236,7 +248,7 @@ function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
 }
 
 /* =========================
-  5) プロンプト生成（±10%バンド厳守）
+5) プロンプト生成（±10%バンド厳守）
 ========================= */
 function buildPrompt({ theme, genre, characters, length, selected }) {
   const safeTheme = theme?.toString().trim() || "身近な題材";
@@ -348,7 +360,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
 }
 
 /* =========================
-  6) Grok (xAI) 呼び出し
+6) Grok (xAI) 呼び出し
 ========================= */
 const client = new OpenAI({
   apiKey: process.env.XAI_API_KEY,
@@ -356,7 +368,7 @@ const client = new OpenAI({
 });
 
 /* =========================
-  失敗理由の整形
+失敗理由の整形
 ========================= */
 function normalizeError(err) {
   return {
@@ -369,7 +381,7 @@ function normalizeError(err) {
 }
 
 /* =========================
-  7) HTTP ハンドラ（後払い消費＋安定出力のための緩和＋短文免除）
+7) HTTP ハンドラ（後払い消費＋安定出力のための緩和＋短文免除）
 ========================= */
 export default async function handler(req, res) {
   try {
@@ -438,8 +450,7 @@ export default async function handler(req, res) {
     body = enforceCharLimit(body, minLen, maxLen, false);
     body = ensureSingleOutro(body, tsukkomiName); // ★ 調整で消えても必ず 1 回に
 
-    // ---- ★★ ここが堅牢化ポイント（短文免除）★★ ----
-    // 指定文字数の 90% 未満（= 10%以上少ない）なら、絶対にクレジットを減らさない
+    // ---- ★★ 短文免除 ★★ ----
     const minRequired = Math.floor(targetLen * 0.9);
     const tooShort = body.length < minRequired;
 
@@ -452,14 +463,15 @@ export default async function handler(req, res) {
 
     if (tooShort) {
       // 10%以上短い → クレジットは絶対に減らさない（本文は返す）
+      const row = await getUsageRow(user_id);
       return res.status(200).json({
         title: title || "（タイトル未設定）",
         text: body,
         meta: {
           structure: structureMeta,
           techniques: techniquesForMeta,
-          usage_count: (await getUsageRow(user_id)).output_count ?? null,
-          paid_credits: (await getUsageRow(user_id)).paid_credits ?? null,
+          usage_count: row.output_count ?? null,
+          paid_credits: row.paid_credits ?? null,
           target_length: targetLen,
           min_length: minLen,
           max_length: maxLen,
@@ -470,7 +482,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // 成功かつ規定文字数域を満たす：ここで初めて消費
+    // 規定文字数域を満たす：ここで初めて消費
     await consumeAfterSuccess(user_id);
 
     // 残量取得
@@ -508,4 +520,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server Error", detail: e });
   }
 }
-
