@@ -316,6 +316,7 @@ const contPrompt = [
 "・台詞同士の間には必ず空行を1つ挟む",
 "",
 "【これまでの本文】",
+seed,
 ].join("\n");
 
 const messages = [
@@ -323,13 +324,17 @@ const messages = [
 { role: "user", content: contPrompt },
 ];
 
-
+// このモデルは max_completion_tokens を要求。temperature は送らない。
 const approxTok = Math.min(4096, Math.max(Math.ceil(remainingChars * 2), 400));
-const resp = await client.chat.completions.create({
-model,
-messages,
-max_completion_tokens: approxTok,
-});
+const req = {
+  model,
+  messages,
+  max_completion_tokens: approxTok,
+};
+// 念のため保険（temperature が混入しても削除）
+delete req.temperature;
+
+const resp = await client.chat.completions.create(req);
 
 let cont = resp?.choices?.[0]?.message?.content?.trim() || "";
 cont = normalizeSpeakerColons(cont);
@@ -391,7 +396,7 @@ const { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, 
   },  
 });  
 
-
+// このモデルは max_completion_tokens を要求。temperature は送らない。
 const approxMaxTok = Math.min(4096, Math.max(Math.ceil(maxLen * 2), 1200));  
 const messages = [  
   { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },  
@@ -401,7 +406,9 @@ const payload = {
   model: process.env.OPENAI_MODEL || "gpt-5",  
   messages,  
   max_completion_tokens: approxMaxTok,  
-};  
+};
+// 念のため保険（temperature が混入しても削除）
+delete payload.temperature;
 
 let completion;  
 try {  
@@ -490,4 +497,3 @@ console.error("[handler error]", e);
 return res.status(500).json({ error: "Server Error", detail: e });
 }
 }
-
