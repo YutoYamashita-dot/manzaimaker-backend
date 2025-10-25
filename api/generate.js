@@ -200,9 +200,9 @@ export default async function handler(req, res) {
     let completion;
     try {
       completion = await client.chat.completions.create({
-        model: process.env.OPENAI_MODEL || "gpt-5",
+        model: process.env.OPENAI_MODEL || "gpt-4o",
         messages,
-        max_completion_token: approxMaxTok,
+        max_tokens: approxMaxTok, // ← OpenAI Chat Completions は max_tokens を使用
       });
     } catch (err) {
       const e = normalizeError(err);
