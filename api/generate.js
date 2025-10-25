@@ -343,8 +343,8 @@ export default async function handler(req, res) {
       },
     });
 
-    // xAI は max_output_tokens を参照。日本語 2文字≈1token 目安で安全側に多めを確保
-    const approxMaxTok = Math.min(4096, Math.ceil(Math.max(maxLen, 600) * 2));
+    // xAI は max_output_tokens を参照。日本語 1文字≈3token 目安で安全側に多めを確保
+    const approxMaxTok = Math.min(4096, Math.ceil(Math.max(maxLen, 3000) * 3));
     const messages = [
       {
         role: "system",
