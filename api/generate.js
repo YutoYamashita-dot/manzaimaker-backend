@@ -10,8 +10,8 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 
 /* =========================
-   Supabase Client
-   ========================= */
+Supabase Client
+========================= */
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const hasSupabase = !!(SUPABASE_URL && SUPABASE_KEY);
@@ -103,8 +103,9 @@ async function consumeAfterSuccess(user_id) {
 }
 
 /* =========================
-   1) 技法 定義テーブル
-   ========================= */
+
+1. 技法 定義テーブル
+========================= */
 const BOKE_DEFS = {
   IIMACHIGAI:
     "言い間違い／聞き間違い：音韻のズレで意外性を生む（例：「カニ食べ行こう」→「紙食べ行こう？」）。",
@@ -113,7 +114,8 @@ const BOKE_DEFS = {
   GIJI_RONRI:
     "擬似論理ボケ：論理風だが中身がズレている（例：「犬は四足、だから社長」）。",
   TSUKKOMI_BOKE: "ツッコミボケ：ツッコミの発言が次のボケの伏線になる構造。",
-  RENSA: "ボケの連鎖：ボケが次のボケを誘発するように連続させ、加速感を生む。",
+  RENSA:
+    "ボケの連鎖：ボケが次のボケを誘発するように連続させ、加速感を生む。",
   KOTOBA_ASOBI: "言葉遊び：ダジャレ・韻・多義語などの言語的転倒。",
 };
 
@@ -137,8 +139,8 @@ const GENERAL_DEFS = {
 };
 
 /* =========================
-   2) 旧仕様：ランダム技法
-   ========================= */
+2) 旧仕様：ランダム技法
+========================= */
 const MUST_HAVE_TECH = "比喩ツッコミ";
 function pickTechniquesWithMetaphor() {
   const pool = ["風刺", "皮肉", "意外性と納得感", "勘違い→訂正", "言い間違い→すれ違い", "立場逆転", "具体例の誇張"];
@@ -148,11 +150,12 @@ function pickTechniquesWithMetaphor() {
 }
 
 /* =========================
-   3) 文字数の最終調整（下限・上限に対応）
-   ========================= */
+3) 文字数の最終調整（下限・上限に対応）
+========================= */
 // allowOverflow = true のとき、上限超過でもカットしない
 function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
   if (!text) return "";
+  // 元コードの正規表現に明らかな構文エラーがあったため最小限で修正
   let t = text.trim().replace(/```[\s\S]*?```/g, "").replace(/^#{1,6}\s.*$/gm, "").trim();
 
   // 上限超過時のみ穏やかに切る（ただし allowOverflow=true のときは切らない）
@@ -171,8 +174,8 @@ function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
 }
 
 /* =========================
-   3.5) 最終行の強制付与
-   ========================= */
+3.5) 最終行の強制付与
+========================= */
 function ensureTsukkomiOutro(text, tsukkomiName = "B") {
   const outro = `${tsukkomiName}: もういいよ`;
   if (!text) return outro;
@@ -203,18 +206,18 @@ function ensureBlankLineBetweenTurns(text) {
 
     const isTurn = /^[^:\n：]+:\s/.test(cur.trim());
     const next = compressed[i + 1];
-    const nextIsTurn = next != null && /^[^:\n：]+:\s/.test(next.trim());
+    const nextIsTurn = next != null && /^[^:\n：]+:\s/.test(next?.trim() || "");
 
     if (isTurn && nextIsTurn) {
-      if (cur.trim() !== "" && next.trim() !== "") out.push(""); // 1空行を追加
+      if (cur.trim() !== "" && (next || "").trim() !== "") out.push(""); // 1空行を追加
     }
   }
   return out.join("\n").replace(/\n{3,}/g, "\n\n");
 }
 
 /* =========================
-   3.6) タイトル/本文の分割
-   ========================= */
+3.6) タイトル/本文の分割
+========================= */
 function splitTitleAndBody(s) {
   if (!s) return { title: "", body: "" };
   const parts = s.split(/\r?\n\r?\n/, 2);
@@ -224,8 +227,8 @@ function splitTitleAndBody(s) {
 }
 
 /* =========================
-   4) ガイドライン生成
-   ========================= */
+4) ガイドライン生成
+========================= */
 function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }) {
   const bokeLines = boke.filter((k) => BOKE_DEFS[k]).map((k) => `- ${BOKE_DEFS[k]}`);
   const tsukkomiLines = tsukkomi.filter((k) => TSUKKOMI_DEFS[k]).map((k) => `- ${TSUKKOMI_DEFS[k]}`);
@@ -247,8 +250,8 @@ function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
 }
 
 /* =========================
-   5) プロンプト生成（±10%バンド厳守で必ず収める）
-   ========================= */
+5) プロンプト生成（±10%バンド厳守で必ず収める）
+========================= */
 function buildPrompt({ theme, genre, characters, length, selected }) {
   const safeTheme = theme && String(theme).trim() ? String(theme).trim() : "身近な題材";
   const safeGenre = genre && String(genre).trim() ? String(genre).trim() : "一般";
@@ -294,7 +297,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     `■題材: ${safeTheme}`,
     `■ジャンル: ${safeGenre}`,
     `■登場人物: ${names.join("、")}`,
-    `■目標文字数: **${minLen}〜${maxLen}文字（必ずこの範囲内に収める。範囲外は不可）**`,
+    `■目標文字数: ${minLen}〜${maxLen}文字（必ずこの範囲内に収める。範囲外は不可）`,
     "",
     "■必須の構成",
     "- 1) フリ（導入）",
@@ -305,11 +308,11 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     guideline || "（特に指定なし）",
     "",
     "■分量・形式の厳守（ここは必須要件）",
-    `- 会話の行数は **少なくとも ${minLines} 行以上**（1台詞あたり 25〜40 文字目安）。`,
-    "- 各台詞は「名前: セリフ」の形式（半角コロン＋半角スペース `:` を使う）。",
-    "- **各台詞の間には必ず空行を1つ入れる（Aの行とBの行の間を1行空ける）。**",
+    `- 会話の行数は 少なくとも ${minLines} 行以上（1台詞あたり 25〜40 文字目安）。`,
+    "- 各台詞は「名前: セリフ」の形式（半角コロン＋半角スペース : を使う）。",
+    "- 各台詞の間には必ず空行を1つ入れる（Aの行とBの行の間を1行空ける）。",
     "- 出力は本文のみ（解説・メタ記述や途中での打ち切りを禁止）。",
-    `- 最後は必ず **${tsukkomiName}: もういいよ** の一行で締める（この行は文字数に含める）。`,
+    `- 最後は必ず ${tsukkomiName}: もういいよ の一行で締める（この行は文字数に含める）。`,
     "- 「比喩」「皮肉」「風刺」と直接本文に書かない。",
     "■見出し・書式",
     "- 最初の1行に【タイトル】を入れ、その直後に本文（会話）を続ける",
@@ -331,7 +334,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
     "以下は途中まで書かれた漫才の本文です。これを“そのまま続けてください”。",
     "・タイトルは出さない",
     "・これまでの台詞やネタの反復はしない",
-    `・少なくとも **${remainingChars} 文字以上**、自然に展開し、最後は **${tsukkomiName}: もういいよ** で締める`,
+    `・少なくとも ${remainingChars} 文字以上、自然に展開し、最後は ${tsukkomiName}: もういいよ で締める`,
     "・各行は「名前: セリフ」の形式（半角コロン＋スペース）",
     "・台詞同士の間には必ず空行を1つ挟む",
     "",
@@ -361,16 +364,16 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
 }
 
 /* =========================
-   6) Grok (xAI) 呼び出し
-   ========================= */
+6) Grok (xAI) 呼び出し
+========================= */
 const client = new OpenAI({
   apiKey: process.env.XAI_API_KEY,
   baseURL: "https://api.x.ai/v1",
 });
 
 /* =========================
-   失敗理由の整形
-   ========================= */
+失敗理由の整形
+========================= */
 function normalizeError(err) {
   return {
     name: err?.name,
@@ -382,8 +385,8 @@ function normalizeError(err) {
 }
 
 /* =========================
-   7) HTTP ハンドラ（後払い消費＋±10%厳守＋不足時追記）
-   ========================= */
+7) HTTP ハンドラ（後払い消費＋±10%厳守＋不足時追記）
+========================= */
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
@@ -436,7 +439,7 @@ export default async function handler(req, res) {
     } catch (err) {
       const e = normalizeError(err);
       console.error("[xAI error]", e);
-      // 後払い方式なのでここでは消費なし
+      // ★ 後払い方式なのでここでは消費なし（クレジットは減らない）
       return res.status(e.status || 500).json({ error: "xAI request failed", detail: e });
     }
 
@@ -477,10 +480,11 @@ export default async function handler(req, res) {
     // 成功判定（本文あり＆締め句）
     const success = body && /もういいよ\s*$/.test(body);
     if (!success) {
+      // ★ ここで即 return（後払いなのでクレジット未消費）
       return res.status(500).json({ error: "Empty or incomplete output" });
     }
 
-    // 実消費（無料枠 or 有料クレジット）
+    // ★ 実消費（無料枠 or 有料クレジット）— 成功した時だけ呼ぶ！
     await consumeAfterSuccess(user_id);
 
     // 返却用：最新の残量取得
@@ -514,6 +518,7 @@ export default async function handler(req, res) {
   } catch (err) {
     const e = normalizeError(err);
     console.error("[handler error]", e);
+    // ★ ここも失敗なので当然クレジットは減らない
     return res.status(500).json({ error: "Server Error", detail: e });
   }
 }
