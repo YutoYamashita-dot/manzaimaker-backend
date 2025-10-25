@@ -297,12 +297,13 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 「比喩」「皮肉」「風刺」と直接本文に書かない。",
     "",
     "■見出し・書式",
-    "- 最初の1行に【タイトル】を入れ、その直後に本文（会話）を続ける",
+    "- 最初の1行に【タイトル】を入れ、その直後に本文（漫才）を続ける",
     "- タイトルと本文の間には必ず空行を1つ入れる",
     "■その他",
     "- 人間にとって「意外性」のある表現を使う。",
     "- 登場人物の個性を反映する。",
-    "- 映画の三幕構成のような話とする。",
+    "- 映画の三幕構成のような漫才とする。",
+    "- ボケとツッコミの役割を明確に。",
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen };
