@@ -323,12 +323,11 @@ const messages = [
 { role: "user", content: contPrompt },
 ];
 
-// ※ このモデルは max_tokens ではなく max_completion_tokens を要求
+// このモデルは temperature をサポートしない＆ max_completion_tokens を要求
 const approxTok = Math.min(4096, Math.max(Math.ceil(remainingChars * 2), 400));
 const resp = await client.chat.completions.create({
 model,
 messages,
-temperature: 0.8,
 max_completion_tokens: approxTok,
 });
 
@@ -392,7 +391,7 @@ const { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, 
   },  
 });  
 
-// モデル呼び出し（このモデルは max_completion_tokens を要求）
+// このモデルは temperature をサポートしない＆ max_completion_tokens を要求
 const approxMaxTok = Math.min(4096, Math.max(Math.ceil(maxLen * 2), 1200));  
 const messages = [  
   { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },  
@@ -401,7 +400,6 @@ const messages = [
 const payload = {  
   model: process.env.OPENAI_MODEL || "gpt-5",  
   messages,  
-  temperature: 0.8,  
   max_completion_tokens: approxMaxTok,  
 };  
 
@@ -492,3 +490,4 @@ console.error("[handler error]", e);
 return res.status(500).json({ error: "Server Error", detail: e });
 }
 }
+
