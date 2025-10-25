@@ -204,8 +204,8 @@ export default async function handler(req, res) {
       },
     });
 
-    // 指定文字数をそのまま目安にするため、max_tokens も目安として設定（日本語1文字≒3token）
-    const approxMaxTok = Math.min(8192, Math.ceil(Math.max(targetLen, 300) * 3));
+    // 安全側にクランプ（日本語1文字≒3tokens、かつプロンプト分を考慮）
+    const approxMaxTok = Math.min(3000, Math.ceil(Math.max(targetLen, 300) * 3));
 
     const messages = [
       { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },
@@ -217,7 +217,6 @@ export default async function handler(req, res) {
       completion = await client.chat.completions.create({
         model: process.env.OPENAI_MODEL || "gpt-5",
         messages,
-        temperature: 0.8,
         max_tokens: approxMaxTok,
       });
     } catch (err) {
