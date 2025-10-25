@@ -401,7 +401,7 @@ export default async function handler(req, res) {
       { role: "user", content: prompt },
     ];
     const payload = {
-      model: process.env.XAI_MODEL || "grok-4",
+      model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
       messages,
       temperature: 0.8,
       max_output_tokens: approxMaxTok,
