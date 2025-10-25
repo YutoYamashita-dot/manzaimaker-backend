@@ -316,7 +316,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
     { role: "user", content: contPrompt },
   ];
 
-  const approxTok = Math.min(4096, Math.ceil(Math.max(remainingChars * 2, 400) * 3));
+  const approxTok = Math.min(8192, Math.ceil(Math.max(remainingChars * 2, 400) * 3)); // ★余裕UP
   const resp = await client.chat.completions.create({
     model,
     messages,
@@ -327,8 +327,8 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
 
   let cont = resp?.choices?.[0]?.message?.content?.trim() || "";
   cont = normalizeSpeakerColons(cont);
-  cont = ensureTsukkomiOutro(cont, tsukkomiName);
   cont = ensureBlankLineBetweenTurns(cont);
+  cont = ensureTsukkomiOutro(cont, tsukkomiName);
   return (seed + "\n" + cont).trim();
 }
 
@@ -354,7 +354,7 @@ function normalizeError(err) {
 }
 
 /* =========================
-  7) HTTP ハンドラ（後払い消費＋±10%厳守＋不足時追記）
+  7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）
 ========================= */
 export default async function handler(req, res) {
   try {
@@ -385,8 +385,8 @@ export default async function handler(req, res) {
       },
     });
 
-    // モデル呼び出し（xAIは max_output_tokens を参照）
-    const approxMaxTok = Math.min(4096, Math.ceil(Math.max(maxLen, 3000) * 3));
+    // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
+    const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
     const messages = [
       { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },
       { role: "user", content: prompt },
@@ -409,13 +409,14 @@ export default async function handler(req, res) {
       return res.status(e.status || 500).json({ error: "xAI request failed", detail: e });
     }
 
-    // 整形
+    // 整形（★順序を安定化：normalize → 空行 → 落ち付与）
     let raw = completion?.choices?.[0]?.message?.content?.trim() || "";
     let { title, body } = splitTitleAndBody(raw);
-    body = enforceCharLimit(body, minLen, Number.MAX_SAFE_INTEGER, true);
-    body = ensureTsukkomiOutro(body, tsukkomiName);
+
+    body = enforceCharLimit(body, minLen, Number.MAX_SAFE_INTEGER, true); // 上限で切らない
     body = normalizeSpeakerColons(body);
     body = ensureBlankLineBetweenTurns(body);
+    body = ensureTsukkomiOutro(body, tsukkomiName);
 
     // 指定文字数との差を補う
     const deficit = targetLen - body.length;
@@ -428,22 +429,25 @@ export default async function handler(req, res) {
           remainingChars: deficit,
           tsukkomiName,
         });
-        body = ensureTsukkomiOutro(body, tsukkomiName);
+        // 追記後も同じ順序で仕上げ
         body = normalizeSpeakerColons(body);
         body = ensureBlankLineBetweenTurns(body);
+        body = ensureTsukkomiOutro(body, tsukkomiName);
       } catch (e) {
         console.warn("[continuation] failed:", e?.message || e);
       }
     }
 
-    // 最終レンジ調整（±10%に収める）
-    body = enforceCharLimit(body, minLen, maxLen, false);
+    // 最終レンジ調整：★上限で切らない（落ち欠落を防ぐ）
+    body = enforceCharLimit(body, minLen, Number.MAX_SAFE_INTEGER, true);
+    // 念のため“落ち”を再付与
+    if (!/もういいよ\s*$/m.test(body)) body = ensureTsukkomiOutro(body, tsukkomiName);
 
-    // 成功判定（本文あり＆締め句）
-    const success = body && /もういいよ\s*$/.test(body);
+    // 成功判定：★本文非空のみ（語尾揺れで落とさない）
+    const success = typeof body === "string" && body.trim().length > 0;
     if (!success) {
       // 失敗：消費しない
-      return res.status(500).json({ error: "Empty or incomplete output" });
+      return res.status(500).json({ error: "Empty output" });
     }
 
     // 成功：ここで初めて消費
