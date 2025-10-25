@@ -323,7 +323,7 @@ const messages = [
 { role: "user", content: contPrompt },
 ];
 
-// このモデルは temperature をサポートしない＆ max_completion_tokens を要求
+
 const approxTok = Math.min(4096, Math.max(Math.ceil(remainingChars * 2), 400));
 const resp = await client.chat.completions.create({
 model,
@@ -391,7 +391,7 @@ const { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, 
   },  
 });  
 
-// このモデルは temperature をサポートしない＆ max_completion_tokens を要求
+
 const approxMaxTok = Math.min(4096, Math.max(Math.ceil(maxLen * 2), 1200));  
 const messages = [  
   { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },  
