@@ -144,12 +144,11 @@ return [MUST_HAVE_TECH, ...shuffled.slice(0, extraCount)];
 ========================= */
 function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
   if (!text) return "";
-  // ✨ 修正：本文を全消ししていた誤正規表現を修正。
-  //   - コードブロックとMarkdown見出しのみを除去し、本文は残す。
+  // コードブロックとMarkdown見出しのみ除去し、本文は保持
   let t = text
     .trim()
-    .replace(/```[\s\S]*?```/g, "")   // コードブロックを除去
-    .replace(/^#{1,6}\s.*$/gm, "")    // Markdown見出し行を除去
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/^#{1,6}\s.*$/gm, "")
     .trim();
 
   if (!allowOverflow && t.length > maxLen) {
@@ -207,14 +206,12 @@ return out.join("\n").replace(/\n{3,}/g, "\n\n");
 ========================= */
 function splitTitleAndBody(s) {
   if (!s) return { title: "", body: "" };
-  // まずは「空行で分割」の既存仕様
   const parts = s.split(/\r?\n\r?\n/, 2);
   if (parts.length === 2) {
     const title = (parts[0] || "").trim().replace(/^【|】$/g, "");
     const body = (parts[1] ?? s).trim();
     return { title, body };
   }
-  // ✨ 追加の堅牢化：空行が無い場合、先頭行が【...】ならそれをタイトルとして扱う
   const lines = s.split(/\r?\n/);
   const first = (lines[0] || "").trim();
   if (/^【.+】$/.test(first)) {
@@ -222,7 +219,6 @@ function splitTitleAndBody(s) {
     const body = lines.slice(1).join("\n").trim();
     return { title, body };
   }
-  // それ以外はタイトル空、本文は全体
   return { title: "", body: s.trim() };
 }
 
@@ -350,7 +346,6 @@ const req = {
   messages,
   max_completion_tokens: approxTok,
 };
-// 念のため保険（temperature が混入しても削除）
 delete req.temperature;
 
 const resp = await client.chat.completions.create(req);
@@ -426,7 +421,6 @@ const payload = {
   messages,  
   max_completion_tokens: approxMaxTok,  
 };
-// 念のため保険（temperature が混入しても削除）
 delete payload.temperature;
 
 let completion;  
@@ -435,20 +429,18 @@ try {
 } catch (err) {  
   const e = normalizeError(err);  
   console.error("[openai error]", e);  
-  // 後払い方式：ここでは消費しない  
   return res.status(e.status || 500).json({ error: "openai request failed", detail: e });  
 }  
 
-// 整形（★順序を安定化：normalize → 空行 → 落ち付与）  
+// 整形：まず本文を作る（この段階ではオチは付けない）
 let raw = completion?.choices?.[0]?.message?.content?.trim() || "";  
 let { title, body } = splitTitleAndBody(raw);  
 
-body = enforceCharLimit(body, minLen, Number.MAX_SAFE_INTEGER, true); // 上限で切らない  
+body = enforceCharLimit(body, minLen, Number.MAX_SAFE_INTEGER, true);
 body = normalizeSpeakerColons(body);  
 body = ensureBlankLineBetweenTurns(body);  
-body = ensureTsukkomiOutro(body, tsukkomiName);  
 
-// 指定文字数との差を補う  
+// 指定文字数との差を補う（この段階もオチ無しで伸ばす）
 const deficit = targetLen - body.length;  
 if (deficit >= 30) {  
   try {  
@@ -459,22 +451,20 @@ if (deficit >= 30) {
       remainingChars: deficit,  
       tsukkomiName,  
     });  
-    // 追記後も同じ順序で仕上げ  
     body = normalizeSpeakerColons(body);  
     body = ensureBlankLineBetweenTurns(body);  
-    body = ensureTsukkomiOutro(body, tsukkomiName);  
   } catch (e) {  
     console.warn("[continuation] failed:", e?.message || e);  
   }  
 }  
 
-// ★ 最終レンジ調整：上下10%の範囲に収める（allowOverflow=false）  
+// 最終レンジ調整 → ここで初めてオチを強制付与
 body = enforceCharLimit(body, minLen, maxLen, false);  
+body = ensureTsukkomiOutro(body, tsukkomiName);
 
-// 成功判定：★本文非空のみ（語尾揺れで落とさない）  
+// 成功判定
 const success = typeof body === "string" && body.trim().length > 0;  
 if (!success) {  
-  // 失敗：消費しない  
   return res.status(500).json({ error: "Empty output" });  
 }  
 
@@ -512,7 +502,6 @@ return res.status(200).json({
 } catch (err) {
 const e = normalizeError(err);
 console.error("[handler error]", e);
-// 失敗：もちろん消費しない
 return res.status(500).json({ error: "Server Error", detail: e });
 }
 }
