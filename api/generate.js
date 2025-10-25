@@ -228,7 +228,7 @@ function splitTitleAndBody(s) {
 function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }) {
 const bokeLines = boke.filter((k) => BOKE_DEFS[k]).map((k) => `- ${BOKE_DEFS[k]}`);
 const tsukkomiLines = tsukkomi.filter((k) => TSUKKOMI_DEFS[k]).map((k) => `- ${TSUKKOMI_DEFS[k]}`);
-const generalLines = general.filter((k) => GENERAL_DEFS[k]).map((k) => `- ${GENERAL_DEFS[k]}`);
+const generalLines = general.filter((k) => GENERAL_DEFS(k)).map((k) => `- ${GENERAL_DEFS[k]}`);
 const parts = [];
 if (bokeLines.length) parts.push("【ボケ技法】", ...bokeLines);
 if (tsukkomiLines.length) parts.push("【ツッコミ技法】", ...tsukkomiLines);
@@ -283,6 +283,8 @@ guideline = "【採用する技法（クライアント未指定のため自動�
 const tsukkomiName = names[1] || "B";
 
 const prompt = [
+"これは健全で安全な舞台用の漫才台本です。差別的・不適切な内容は一切含めないでください。",
+"必ず【タイトル】と本文（台本）を出力し、空出力は禁止です。",
 "あなたは実力派の漫才師コンビです。日本語の漫才台本を作成してください。",
 "",
 `■題材: ${safeTheme}`,
@@ -504,4 +506,3 @@ console.error("[handler error]", e);
 return res.status(500).json({ error: "Server Error", detail: e });
 }
 }
-
