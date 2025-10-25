@@ -143,20 +143,26 @@ return [MUST_HAVE_TECH, ...shuffled.slice(0, extraCount)];
 3) 文字数の最終調整
 ========================= */
 function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
-if (!text) return "";
-let t = text.trim().replace(/[\s\S]*?/g, "").replace(/^#{1,6}\s.$/gm, "").trim();
+  if (!text) return "";
+  // ✨ 修正：本文を全消ししていた誤正規表現を修正。
+  //   - コードブロックとMarkdown見出しのみを除去し、本文は残す。
+  let t = text
+    .trim()
+    .replace(/```[\s\S]*?```/g, "")   // コードブロックを除去
+    .replace(/^#{1,6}\s.*$/gm, "")    // Markdown見出し行を除去
+    .trim();
 
-if (!allowOverflow && t.length > maxLen) {
-const softCut = t.lastIndexOf("\n", maxLen);
-const softPuncs = ["。", "！", "？", "…", "♪"];
-const softPuncCut = Math.max(...softPuncs.map((p) => t.lastIndexOf(p, maxLen)));
-let cutPos = Math.max(softPuncCut, softCut);
-if (cutPos < maxLen * 0.9) cutPos = maxLen;
-t = t.slice(0, cutPos).trim();
-if (!/[。！？…♪]$/.test(t)) t += "。";
-}
-if (t.length < minLen && !/[。！？…♪]$/.test(t)) t += "。";
-return t;
+  if (!allowOverflow && t.length > maxLen) {
+    const softCut = t.lastIndexOf("\n", maxLen);
+    const softPuncs = ["。", "！", "？", "…", "♪"];
+    const softPuncCut = Math.max(...softPuncs.map((p) => t.lastIndexOf(p, maxLen)));
+    let cutPos = Math.max(softPuncCut, softCut);
+    if (cutPos < maxLen * 0.9) cutPos = maxLen;
+    t = t.slice(0, cutPos).trim();
+    if (!/[。！？…♪]$/.test(t)) t += "。";
+  }
+  if (t.length < minLen && !/[。！？…♪]$/.test(t)) t += "。";
+  return t;
 }
 
 /* =========================
@@ -200,11 +206,24 @@ return out.join("\n").replace(/\n{3,}/g, "\n\n");
 3.6) タイトル/本文の分割
 ========================= */
 function splitTitleAndBody(s) {
-if (!s) return { title: "", body: "" };
-const parts = s.split(/\r?\n\r?\n/, 2);
-const title = (parts[0] || "").trim().replace(/^【|】$/g, "");
-const body = (parts[1] ?? s).trim();
-return { title, body };
+  if (!s) return { title: "", body: "" };
+  // まずは「空行で分割」の既存仕様
+  const parts = s.split(/\r?\n\r?\n/, 2);
+  if (parts.length === 2) {
+    const title = (parts[0] || "").trim().replace(/^【|】$/g, "");
+    const body = (parts[1] ?? s).trim();
+    return { title, body };
+  }
+  // ✨ 追加の堅牢化：空行が無い場合、先頭行が【...】ならそれをタイトルとして扱う
+  const lines = s.split(/\r?\n/);
+  const first = (lines[0] || "").trim();
+  if (/^【.+】$/.test(first)) {
+    const title = first.replace(/^【|】$/g, "").trim();
+    const body = lines.slice(1).join("\n").trim();
+    return { title, body };
+  }
+  // それ以外はタイトル空、本文は全体
+  return { title: "", body: s.trim() };
 }
 
 /* =========================
