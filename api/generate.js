@@ -331,7 +331,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
   const resp = await client.chat.completions.create({
     model,
     messages,
-    temperature: 0.8,
+    temperature: 1,
     max_output_tokens: approxTok,
     max_tokens: approxTok,
   });
