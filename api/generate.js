@@ -1,10 +1,7 @@
-
-
-
 // api/generate.js
 // Vercel Node.js (ESM)。本文と「タイトル」を日本語で返す（台本のみ）
-// 必須: XAI_API_KEY
-// 任意: XAI_MODEL（未設定なら grok-4）
+// 必須: OPENAI_API_KEY
+// 任意: OPEN AI_MODEL（未設定なら gpt-5）
 // 追加: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY（ある場合、user_id の回数/クレジットを保存）
 
 export const config = { runtime: "nodejs" };
@@ -288,7 +285,6 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 各台詞の間には必ず空行を1つ入れる（Aの行とBの行の間を1行空ける）。",
     "- 出力は本文のみ（解説・メタ記述や途中での打ち切りを禁止）。",
     `- 最後は必ず ${tsukkomiName}: もういいよ の一行で締める（この行は文字数に含める）。`,
-    "- 「比喩」「皮肉」「風刺」と直接本文に書かない。",
     "- 「緊張感のある状態」とそれが「緩和する状態」を必ず作る。",
     "- 選択された技法をしっかり使う。",
     "■見出し・書式",
@@ -299,7 +295,6 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 登場人物の個性を反映する。",
     "- 映画の三幕構成のような話とする。",
     "- ところどころで「皮肉」や「風刺」の表現を入れる。",
-
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen };
@@ -347,8 +342,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
   6) Grok (xAI) 呼び出し
 ========================= */
 const client = new OpenAI({
-  apiKey: process.env.XAI_API_KEY,
-  baseURL: "https://api.x.ai/v1",
+  apiKey: process.env.OPENAI_API_KEY,
 });
 
 /* =========================
@@ -396,17 +390,16 @@ export default async function handler(req, res) {
       },
     });
 
-    // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
+    // モデル呼び出し（OpenAIは max_tokens を参照）
     const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
     const messages = [
       { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },
       { role: "user", content: prompt },
     ];
     const payload = {
-      model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
+      model: process.env.OPENAI_MODEL || "gpt-5",
       messages,
       temperature: 0.8,
-      max_output_tokens: approxMaxTok,
       max_tokens: approxMaxTok,
     };
 
@@ -435,7 +428,7 @@ export default async function handler(req, res) {
       try {
         body = await generateContinuation({
           client,
-          model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
+          model: process.env.OPENAI_MODEL || "gpt-4o",
           baseBody: body,
           remainingChars: deficit,
           tsukkomiName,
@@ -496,5 +489,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server Error", detail: e });
   }
 }
-
 
