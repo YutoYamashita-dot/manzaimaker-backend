@@ -45,6 +45,10 @@ async function incrementUsage(user_id, delta = 1) {
 
 /* === ★ 課金ユーティリティ（後払い消費：失敗時は絶対に減らさない） === */
 const FREE_QUOTA = 20;
+// ★ 追加：広告あり版の無料枠（2回）
+const FREE_QUOTA_AD = 2;
+// ★ リクエストごとに上書き可能な「現在の無料枠」
+let CURRENT_FREE_QUOTA = FREE_QUOTA;
 
 async function getUsageRow(user_id) {
   if (!hasSupabase || !user_id) return { output_count: 0, paid_credits: 0 };
@@ -71,7 +75,8 @@ async function checkCredit(user_id) {
   const row = await getUsageRow(user_id);
   const used = row.output_count ?? 0;
   const paid = row.paid_credits ?? 0;
-  return { ok: used < FREE_QUOTA || paid > 0, row };
+  // ★ グローバルの CURRENT_FREE_QUOTA を使用
+  return { ok: used < CURRENT_FREE_QUOTA || paid > 0, row };
 }
 
 /** 生成成功後：ここで初めて消費（無料→有料の順） */
@@ -81,7 +86,8 @@ async function consumeAfterSuccess(user_id) {
   const used = row.output_count ?? 0;
   const paid = row.paid_credits ?? 0;
 
-  if (used < FREE_QUOTA) {
+  // ★ グローバルの CURRENT_FREE_QUOTA を使用
+  if (used < CURRENT_FREE_QUOTA) {
     await setUsageRow(user_id, { output_count: used + 1, paid_credits: paid });
     return { consumed: "free" };
   }
@@ -362,12 +368,25 @@ export default async function handler(req, res) {
 
     const { theme, genre, characters, length, boke, tsukkomi, general, user_id } = req.body || {};
 
+    // ★ 追加：広告あり版の判別と無料枠 2 回適用
+    // - クライアントから appVariant (例: "AD_VERSION") や free_quota=2 が届いていれば 2 回とする
+    // - user_id が "xxx:AD_VERSION" のような複合IDでも同様に判定
+    const bodyApp = (req.body?.client_app || "").toString();
+    const bodyFree = Number(req.body?.free_quota || 0);
+    const isAdClient =
+      bodyApp.toUpperCase() === "AD_VERSION" ||
+      (typeof user_id === "string" && user_id.toUpperCase().includes(":AD_VERSION")) ||
+      bodyFree === 2;
+
+    // ★ リクエスト単位で無料枠を切替
+    CURRENT_FREE_QUOTA = isAdClient ? FREE_QUOTA_AD : FREE_QUOTA;
+
     // 生成前：残高チェックのみ（消費なし）
     const gate = await checkCredit(user_id);
     if (!gate.ok) {
       const row = gate.row || { output_count: 0, paid_credits: 0 };
       return res.status(403).json({
-        error: `使用上限（${FREE_QUOTA}回）に達しており、クレジットが不足しています。`,
+        error: `使用上限（${CURRENT_FREE_QUOTA}回）に達しており、クレジットが不足しています。`,
         usage_count: row.output_count,
         paid_credits: row.paid_credits,
       });
@@ -448,7 +467,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Empty output" });
     }
 
-    // 成功：ここで初めて消費
+    // 成功：ここで初めて消費（無料枠はリクエストごとの CURRENT_FREE_QUOTA で判定）
     await consumeAfterSuccess(user_id);
 
     // 残量取得
