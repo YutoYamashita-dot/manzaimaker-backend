@@ -98,7 +98,7 @@ async function consumeAfterSuccess(user_id) {
     await setUsageRow(user_id, { output_count: used + 1, paid_credits: paid - 1 });
     return { consumed: "paid" };
   }
-  // ここに来るのは理論上不足（直前チェックと競合したなど）
+  // 競合などで理論上不足
   return { consumed: null };
 }
 
@@ -148,22 +148,24 @@ function pickTechniquesWithMetaphor() {
 }
 
 /* =========================
-   3) 文字数の最終調整
+   3) 文字数の最終調整（下限・上限に対応）
    ========================= */
-function enforceCharLimit(text, maxLen) {
+function enforceCharLimit(text, minLen, maxLen) {
   if (!text) return "";
   let t = text.trim().replace(/```[\s\S]*?```/g, "").replace(/^#{1,6}\s.*$/gm, "").trim();
 
+  // 上限超過時のみ穏やかに切る
   if (t.length > maxLen) {
     const softCut = t.lastIndexOf("\n", maxLen);
     const softPuncs = ["。", "！", "？", "…", "♪"];
     const softPuncCut = Math.max(...softPuncs.map((p) => t.lastIndexOf(p, maxLen)));
     let cutPos = Math.max(softPuncCut, softCut);
-    if (cutPos < maxLen * 0.7) cutPos = maxLen;
+    if (cutPos < maxLen * 0.9) cutPos = maxLen;
     t = t.slice(0, cutPos).trim();
     if (!/[。！？…♪]$/.test(t)) t += "。";
   }
-  if (!/[。！？…♪]$/.test(t)) t += "。";
+  // 下限未満ならここでは切らない（締め句だけ整える）
+  if (t.length < minLen && !/[。！？…♪]$/.test(t)) t += "。";
   return t;
 }
 
@@ -217,7 +219,7 @@ function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
 }
 
 /* =========================
-   5) プロンプト生成
+   5) プロンプト生成（最小長・行数・早期終了禁止を明示）
    ========================= */
 function buildPrompt({ theme, genre, characters, length, selected }) {
   const safeTheme = theme && String(theme).trim() ? String(theme).trim() : "身近な題材";
@@ -231,6 +233,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
   const targetLen = Math.min(Number(length) || 350, 2000);
   const minLen = Math.max(100, Math.floor(targetLen * 0.9));
   const maxLen = targetLen;
+  const minLines = Math.max(12, Math.ceil(minLen / 35)); // 1行25〜40字想定で下限行数
 
   const hasNewSelection =
     (selected?.boke?.length || 0) + (selected?.tsukkomi?.length || 0) + (selected?.general?.length || 0) > 0;
@@ -259,7 +262,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     `■題材: ${safeTheme}`,
     `■ジャンル: ${safeGenre}`,
     `■登場人物: ${names.join("、")}`,
-    `■目標文字数: ${minLen}〜${maxLen}文字`,
+    `■目標文字数: **最低 ${minLen} 文字以上 ${maxLen} 文字以下**（最低文字数に到達するまで**絶対に終了しない**）`,
     "",
     "■必須の構成",
     "- 1) フリ（導入）",
@@ -269,16 +272,18 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "■選択された技法（技法の名称は本文に出さないこと）",
     guideline || "（特に指定なし）",
     "",
-    "■文体・出力ルール",
-    "- 最後の1行は必ずツッコミ役（2人目の登場人物）による「もういいよ」で終える",
+    "■分量・形式の厳守（ここは必須要件）",
+    `- 会話の行数は **少なくとも ${minLines} 行以上**（1台詞あたり 25〜40 文字目安）。`,
+    "- 各台詞は「名前: セリフ」の形式（半角コロン＋半角スペース `:` を使う）。",
+    "- 出力は本文のみ（解説・メタ記述や途中での打ち切りを禁止）。",
+    `- 最後は必ず **${tsukkomiName}: もういいよ** の一行で締める（この行は文字数に含める）。`,
+    "",
+    "■見出し・書式",
     "- 最初の1行に【タイトル】を入れ、その直後に本文（会話）を続ける",
     "- タイトルと本文の間には必ず空行を1つ入れる",
-    "- 会話は 名前：台詞 形式で、1台詞ごとに改行",
-    "- 解説・注釈・見出しは書かない。本文のみを出力する",
-    "- 人間にとって「意外性」のある表現を使う。",
   ].join("\n");
 
-  return { prompt, techniquesForMeta, structureMeta, maxLen, tsukkomiName };
+  return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName };
 }
 
 /* =========================
@@ -288,7 +293,6 @@ const client = new OpenAI({
   apiKey: process.env.XAI_API_KEY,
   baseURL: "https://api.x.ai/v1",
 });
-const MODEL = process.env.XAI_MODEL || "grok-4";
 
 /* =========================
    失敗理由の整形
@@ -304,7 +308,7 @@ function normalizeError(err) {
 }
 
 /* =========================
-   7) HTTP ハンドラ（失敗時にクレジットが減らないよう“後払い消費”）
+   7) HTTP ハンドラ（失敗時にクレジットが減らない“後払い消費”＋長文対策）
    ========================= */
 export default async function handler(req, res) {
   try {
@@ -323,7 +327,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const { prompt, techniquesForMeta, structureMeta, maxLen, tsukkomiName } = buildPrompt({
+    const { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName } = buildPrompt({
       theme,
       genre,
       characters,
@@ -335,6 +339,8 @@ export default async function handler(req, res) {
       },
     });
 
+    // xAI は max_output_tokens を参照。日本語 2文字≈1token 目安で安全側に多めを確保
+    const approxMaxTok = Math.min(4096, Math.ceil(Math.max(maxLen, 600) * 2));
     const messages = [
       {
         role: "system",
@@ -343,34 +349,40 @@ export default async function handler(req, res) {
       },
       { role: "user", content: prompt },
     ];
-
-    const payloadBase = { messages, temperature: 0.8, max_tokens: 8000 };
+    const payloadBase = {
+      messages,
+      temperature: 0.8,
+      max_output_tokens: approxMaxTok,
+      max_tokens: approxMaxTok, // 保険で同時指定
+    };
 
     let completion;
     try {
-      completion = await client.chat.completions.create({ ...payloadBase, model: MODEL });
+      completion = await client.chat.completions.create({ ...payloadBase, model: process.env.XAI_MODEL || "grok-4" });
     } catch (err) {
       const e = normalizeError(err);
       console.error("[xAI error]", e);
-      // ★ ここではまだ消費していないのでロールバック不要（後払い方式）
+      // 後払い方式なのでここでは消費なし
       return res.status(e.status || 500).json({ error: "xAI request failed", detail: e });
     }
 
     // 出力を整形
     let raw = completion?.choices?.[0]?.message?.content?.trim() || "";
     let { title, body } = splitTitleAndBody(raw);
+
+    // 末尾に『もういいよ』を確保し文字数調整（下限も考慮）
     const outroLine = `${tsukkomiName}: もういいよ`;
     const reserve = Math.max(8, outroLine.length + 1);
     const safeMax = Math.max(50, (Number(maxLen) || 350) - reserve);
-    body = enforceCharLimit(body, safeMax);
+    body = enforceCharLimit(body, minLen, safeMax);
     body = ensureTsukkomiOutro(body, tsukkomiName);
     body = normalizeSpeakerColons(body);
 
-    // 生成成功とみなせる本文か軽くチェック
-    const success = body && body.length > 0;
+    // 生成成功判定（最低限：本文がある・締め句がある）
+    const success = body && /もういいよ\s*$/.test(body);
     if (!success) {
-      // ★ 失敗扱い：後払い方式なので消費なしのままエラー返却
-      return res.status(500).json({ error: "Empty output" });
+      // 後払い方式なので消費なしのままエラー返却
+      return res.status(500).json({ error: "Empty or incomplete output" });
     }
 
     // ★ 生成成功 → ここで初めて“実消費”（無料枠 or 有料クレジット）
