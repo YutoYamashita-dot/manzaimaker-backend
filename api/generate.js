@@ -458,9 +458,41 @@ if (deficit >= 30) {
   }  
 }  
 
+// 追加フォールバック：まだ足りなければ軽く追記（タイトルは触らない）
+if (body.length < minLen) {
+  try {
+    const need = Math.max(minLen - body.length, 80);
+    const extendMessages = [
+      { role: "system", content: "あなたは実力派の漫才師コンビです。今から渡す本文の“続きだけ”を追加してください。タイトルは出力しないでください。最後の「もういいよ」は付けないでください。" },
+      { role: "user", content: `少なくとも ${need} 文字以上、自然に会話を続けてください。\n\n【本文】\n${body}` },
+    ];
+    const ext = await client.chat.completions.create({
+      model: process.env.OPENAI_MODEL || "gpt-5",
+      messages: extendMessages,
+      max_completion_tokens: Math.min(2048, Math.max(Math.ceil(need * 2), 300)),
+    });
+    const add = ext?.choices?.[0]?.message?.content?.trim() || "";
+    if (add) {
+      body = (body + "\n" + add).trim();
+      body = normalizeSpeakerColons(body);
+      body = ensureBlankLineBetweenTurns(body);
+    }
+  } catch (e) {
+    console.warn("[extend] fallback failed:", e?.message || e);
+  }
+}
+
 // 最終レンジ調整 → ここで初めてオチを強制付与
 body = enforceCharLimit(body, minLen, maxLen, false);  
 body = ensureTsukkomiOutro(body, tsukkomiName);
+
+// タイトル補完：空なら本文先頭から自動生成
+if (!title || !title.trim()) {
+  const sample = body.replace(/\n+/g, " ").slice(0, 20).trim();
+  if (sample) {
+    title = `${sample}…`;
+  }
+}
 
 // 成功判定
 const success = typeof body === "string" && body.trim().length > 0;  
