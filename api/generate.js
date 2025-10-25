@@ -150,12 +150,13 @@ function pickTechniquesWithMetaphor() {
 /* =========================
    3) 文字数の最終調整（下限・上限に対応）
    ========================= */
-function enforceCharLimit(text, minLen, maxLen) {
+// allowOverflow = true のとき、上限超過でもカットしない
+function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
   if (!text) return "";
   let t = text.trim().replace(/```[\s\S]*?```/g, "").replace(/^#{1,6}\s.*$/gm, "").trim();
 
-  // 上限超過時のみ穏やかに切る
-  if (t.length > maxLen) {
+  // 上限超過時のみ穏やかに切る（ただし allowOverflow=true のときは切らない）
+  if (!allowOverflow && t.length > maxLen) {
     const softCut = t.lastIndexOf("\n", maxLen);
     const softPuncs = ["。", "！", "？", "…", "♪"];
     const softPuncCut = Math.max(...softPuncs.map((p) => t.lastIndexOf(p, maxLen)));
@@ -262,7 +263,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     `■題材: ${safeTheme}`,
     `■ジャンル: ${safeGenre}`,
     `■登場人物: ${names.join("、")}`,
-    `■目標文字数: **最低 ${minLen} 文字以上 ${maxLen} 文字以下**（最低文字数に到達するまで**絶対に終了しない**）`,
+    `■目標文字数: **最低 ${minLen} 文字以上 ${maxLen} 文字以下**（最低文字数に到達するまで**絶対に終了しない**。ただし、上限は超えても良い）`,
     "",
     "■必須の構成",
     "- 1) フリ（導入）",
@@ -282,12 +283,47 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 最初の1行に【タイトル】を入れ、その直後に本文（会話）を続ける",
     "- タイトルと本文の間には必ず空行を1つ入れる",
     "■その他",
-　　 "- 人間にとって「意外性」のある表現を使う。",
-　　 "- 登場人物のキャラクター性を反映させる。",
-
+    "- 人間にとって「意外性」のある表現を使う。",
+    "- 登場人物のキャラクター性を反映させる。",
   ].join("\n");
 
-  return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName };
+  return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen };
+}
+
+/* ===== 追加：指定文字数に30字以上足りない場合に本文を追記する ===== */
+async function generateContinuation({ client, model, baseBody, remainingChars, tsukkomiName }) {
+  // すでに「もういいよ」で終わっていたら一旦除去（連結後に再付与）
+  let seed = baseBody.replace(new RegExp(`${tsukkomiName}: もういいよ\\s*$`), "").trim();
+
+  const contPrompt = [
+    "以下は途中まで書かれた漫才の本文です。これを“そのまま続けてください”。",
+    "・タイトルは出さない",
+    "・これまでの台詞やネタの反復はしない",
+    `・少なくとも **${remainingChars} 文字以上**、自然に展開し、最後は **${tsukkomiName}: もういいよ** で締める`,
+    "・各行は「名前: セリフ」の形式（半角コロン＋スペース）",
+    "",
+    "【これまでの本文】",
+    seed,
+  ].join("\n");
+
+  const messages = [
+    { role: "system", content: "あなたは実力派の漫才師コンビです。本文の“続き”だけを出力してください。" },
+    { role: "user", content: contPrompt },
+  ];
+
+  const approxTok = Math.min(4096, Math.ceil(Math.max(remainingChars * 2, 400) * 3));
+  const resp = await client.chat.completions.create({
+    model,
+    messages,
+    temperature: 0.8,
+    max_output_tokens: approxTok,
+    max_tokens: approxTok,
+  });
+
+  let cont = resp?.choices?.[0]?.message?.content?.trim() || "";
+  cont = normalizeSpeakerColons(cont);
+  cont = ensureTsukkomiOutro(cont, tsukkomiName);
+  return (seed + "\n" + cont).trim();
 }
 
 /* =========================
@@ -312,7 +348,7 @@ function normalizeError(err) {
 }
 
 /* =========================
-   7) HTTP ハンドラ（失敗時にクレジットが減らない“後払い消費”＋長文対策）
+   7) HTTP ハンドラ（後払い消費＋長文対策＋30字以上不足なら追記）
    ========================= */
 export default async function handler(req, res) {
   try {
@@ -331,7 +367,7 @@ export default async function handler(req, res) {
       });
     }
 
-    const { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName } = buildPrompt({
+    const { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen } = buildPrompt({
       theme,
       genre,
       characters,
@@ -374,13 +410,30 @@ export default async function handler(req, res) {
     let raw = completion?.choices?.[0]?.message?.content?.trim() || "";
     let { title, body } = splitTitleAndBody(raw);
 
-    // 末尾に『もういいよ』を確保し文字数調整（下限も考慮）
-    const outroLine = `${tsukkomiName}: もういいよ`;
-    const reserve = Math.max(8, outroLine.length + 1);
-    const safeMax = Math.max(50, (Number(maxLen) || 350) - reserve);
-    body = enforceCharLimit(body, minLen, safeMax);
+    // ★ 指定文字数以上でもカットしない（allowOverflow=true）
+    body = enforceCharLimit(body, minLen, Number.MAX_SAFE_INTEGER, true);
     body = ensureTsukkomiOutro(body, tsukkomiName);
     body = normalizeSpeakerColons(body);
+
+    // ★ 指定文字数より 30 文字以上足りなければ追記する
+    const deficit = (Number(length) || targetLen) - body.length;
+    if (deficit >= 30) {
+      try {
+        body = await generateContinuation({
+          client,
+          model: process.env.XAI_MODEL || "grok-4",
+          baseBody: body,
+          remainingChars: deficit,
+          tsukkomiName,
+        });
+        // 追記後も “カットしない” 方針を維持（締めと整形のみ）
+        body = ensureTsukkomiOutro(body, tsukkomiName);
+        body = normalizeSpeakerColons(body);
+      } catch (e) {
+        console.warn("[continuation] failed:", e?.message || e);
+        // 追記失敗時はそのまま返す（課金は後述の成功条件で判断）
+      }
+    }
 
     // 生成成功判定（最低限：本文がある・締め句がある）
     const success = body && /もういいよ\s*$/.test(body);
@@ -389,7 +442,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Empty or incomplete output" });
     }
 
-    // ★ 生成成功 → ここで初めて“実消費”（無料枠 or 有料クレジット）
+    // ここで初めて“実消費”（無料枠 or 有料クレジット）
     await consumeAfterSuccess(user_id);
 
     // 返却用：最新の残量取得
