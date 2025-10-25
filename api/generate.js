@@ -169,6 +169,23 @@ function ensureTsukkomiOutro(text, tsukkomiName = "B") {
   return text.replace(/\s*$/, "") + "\n" + outro;
 }
 
+/* === ★ 厳格化：末尾を “<Tsukkomi>: もういいよ” で必ず終わらせる ===
+   - その行より後に何かが続いていれば切り落とす
+   - 無ければ末尾に追加する */
+function enforceStrictOutro(text, tsukkomiName = "B") {
+  const lines = (text || "").replace(/\r\n/g, "\n").split("\n");
+  const required = `${tsukkomiName}: もういいよ`;
+  // 末尾側から最初に見つかる required 行を探す
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim() === required) {
+      // その行以降を切り落とし、required を末尾にして返す
+      return [...lines.slice(0, i), required].join("\n");
+    }
+  }
+  // 見つからなければ末尾に付与
+  return (text || "").replace(/\s*$/, "") + (text?.endsWith("\n") ? "" : "\n") + required;
+}
+
 /* 行頭の「名前：/名前:」を「名前: 」に正規化 */
 function normalizeSpeakerColons(s) {
   return s.replace(/(^|\n)([^\n:：]+)[：:]\s*/g, (_m, head, name) => `${head}${name}: `);
@@ -300,40 +317,11 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
 }
 
 /* ===== 指定文字数に30字以上足りない場合に本文を追記する ===== */
+// （※ ご要望により、このルールは使用しません。関数は残しても呼び出しません。）
 async function generateContinuation({ client, model, baseBody, remainingChars, tsukkomiName }) {
   let seed = baseBody.replace(new RegExp(`${tsukkomiName}: もういいよ\\s*$`), "").trim();
-
-  const contPrompt = [
-    "以下は途中まで書かれた漫才の本文です。これを“そのまま続けてください”。",
-    "・タイトルは出さない",
-    "・これまでの台詞やネタの反復はしない",
-    `・少なくとも ${remainingChars} 文字以上、自然に展開し、最後は ${tsukkomiName}: もういいよ で締める`,
-    "・各行は「名前: セリフ」の形式（半角コロン＋スペース）",
-    "・台詞同士の間には必ず空行を1つ挟む",
-    "",
-    "【これまでの本文】",
-    seed,
-  ].join("\n");
-
-  const messages = [
-    { role: "system", content: "あなたは実力派の漫才師コンビです。本文の“続き”だけを出力してください。" },
-    { role: "user", content: contPrompt },
-  ];
-
-  const approxTok = Math.min(8192, Math.ceil(Math.max(remainingChars * 2, 400) * 3)); // ★余裕UP
-  const resp = await client.chat.completions.create({
-    model,
-    messages,
-    temperature: 0.8,
-    max_output_tokens: approxTok,
-    max_tokens: approxTok,
-  });
-
-  let cont = resp?.choices?.[0]?.message?.content?.trim() || "";
-  cont = normalizeSpeakerColons(cont);
-  cont = ensureBlankLineBetweenTurns(cont);
-  cont = ensureTsukkomiOutro(cont, tsukkomiName);
-  return (seed + "\n" + cont).trim();
+  // 以降は呼ばれませんが、残しておきます（互換のため）
+  return (seed + "\n" + `${tsukkomiName}: もういいよ`).trim();
 }
 
 /* =========================
@@ -422,7 +410,7 @@ export default async function handler(req, res) {
       return res.status(e.status || 500).json({ error: "xAI request failed", detail: e });
     }
 
-    // 整形（★順序を安定化：normalize → 空行 → 落ち付与）
+    // 整形（★順序を安定化：normalize → 空行 → 落ち付与 → 厳格末尾チェック）
     let raw = completion?.choices?.[0]?.message?.content?.trim() || "";
     let { title, body } = splitTitleAndBody(raw);
 
@@ -430,31 +418,13 @@ export default async function handler(req, res) {
     body = normalizeSpeakerColons(body);
     body = ensureBlankLineBetweenTurns(body);
     body = ensureTsukkomiOutro(body, tsukkomiName);
-
-    // 指定文字数との差を補う
-    const deficit = targetLen - body.length;
-    if (deficit >= 30) {
-      try {
-        body = await generateContinuation({
-          client,
-          model: process.env.XAI_MODEL || "grok-4",
-          baseBody: body,
-          remainingChars: deficit,
-          tsukkomiName,
-        });
-        // 追記後も同じ順序で仕上げ
-        body = normalizeSpeakerColons(body);
-        body = ensureBlankLineBetweenTurns(body);
-        body = ensureTsukkomiOutro(body, tsukkomiName);
-      } catch (e) {
-        console.warn("[continuation] failed:", e?.message || e);
-      }
-    }
+    body = enforceStrictOutro(body, tsukkomiName); // ★ 末尾の厳格化
 
     // ★ 最終レンジ調整：上下10%の範囲に収める（allowOverflow=false）
     body = enforceCharLimit(body, minLen, maxLen, false);
+    body = enforceStrictOutro(body, tsukkomiName); // 調整後ももう一度厳格化
 
-    // 成功判定：★本文非空のみ（語尾揺れで落とさない）
+    // 成功判定：★本文非空のみ（末尾厳格化済み）
     const success = typeof body === "string" && body.trim().length > 0;
     if (!success) {
       // 失敗：消費しない
@@ -498,4 +468,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: "Server Error", detail: e });
   }
 }
-
