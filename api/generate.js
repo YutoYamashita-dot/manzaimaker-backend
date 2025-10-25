@@ -368,17 +368,13 @@ export default async function handler(req, res) {
 
     const { theme, genre, characters, length, boke, tsukkomi, general, user_id } = req.body || {};
 
-    // ★ 追加：広告あり版の判別と無料枠 2 回適用
-    // - クライアントから appVariant (例: "AD_VERSION") や free_quota=2 が届いていれば 2 回とする
-    // - user_id が "xxx:AD_VERSION" のような複合IDでも同様に判定
+    // ★ 追加：広告あり/なしの判定を FREE_QUOTA では行わない（client_app / user_id のタグでのみ判定）
     const bodyApp = (req.body?.client_app || "").toString();
-    const bodyFree = Number(req.body?.free_quota || 0);
     const isAdClient =
       bodyApp.toUpperCase() === "AD_VERSION" ||
-      (typeof user_id === "string" && user_id.toUpperCase().includes(":AD_VERSION")) ||
-      bodyFree === 2;
+      (typeof user_id === "string" && user_id.toUpperCase().includes(":AD_VERSION"));
 
-    // ★ リクエスト単位で無料枠を切替
+    // ★ リクエスト単位で無料枠を切替（FREE_QUOTA の値そのものでは判定しない）
     CURRENT_FREE_QUOTA = isAdClient ? FREE_QUOTA_AD : FREE_QUOTA;
 
     // 生成前：残高チェックのみ（消費なし）
