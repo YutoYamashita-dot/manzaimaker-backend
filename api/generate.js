@@ -1,5 +1,5 @@
 // api/generate.js
-// Vercel Node.js (ESM)。本文と「タイトル」を日本語で返す（台本のみ）
+// Vercel Node.js (ESM)。本文と「タイトル」を日本語で返す（漫才台本）
 // 必須: OPENAI_API_KEY
 // 任意: OPENAI_MODEL（未設定なら gpt-4o）
 
@@ -8,15 +8,13 @@ export const config = { runtime: "nodejs" };
 import OpenAI from "openai";
 
 /* =========================
- 1. 技法 定義テーブル（削除せず維持）
+ 1. 技法 定義テーブル
 ========================= */
 const BOKE_DEFS = {
-  IIMACHIGAI:
-    "言い間違い／聞き間違い：音韻のズレで意外性を生む（例：「カニ食べ行こう」→「紙食べ行こう？」）。",
+  IIMACHIGAI: "言い間違い／聞き間違い：音韻のズレで意外性を生む（例：「カニ食べ行こう」→「紙食べ行こう？」）。",
   HIYU: "比喩ボケ：日常を比喩で誇張",
   GYAKUSETSU: "逆説ボケ：一見正論に聞こえるが論理が破綻している。",
-  GIJI_RONRI:
-    "擬似論理ボケ：論理風だが中身がズレている（例：「犬は四足、だから社長」）。",
+  GIJI_RONRI: "擬似論理ボケ：論理風だが中身がズレている（例：「犬は四足、だから社長」）。",
   TSUKKOMI_BOKE: "ツッコミボケ：ツッコミの発言が次のボケの伏線になる構造。",
   RENSA: "ボケの連鎖：ボケが次のボケを誘発するように連続させ、加速感を生む。",
   KOTOBA_ASOBI: "言葉遊び：ダジャレ・韻・多義語などの言語的転倒。",
@@ -40,18 +38,7 @@ const GENERAL_DEFS = {
 };
 
 /* =========================
- 2) 旧仕様：ランダム技法（維持）
-========================= */
-const MUST_HAVE_TECH = "比喩ツッコミ";
-function pickTechniquesWithMetaphor() {
-  const pool = ["風刺", "皮肉", "意外性と納得感", "勘違い→訂正", "言い間違い→すれ違い", "立場逆転", "具体例の誇張"];
-  const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  const extraCount = Math.floor(Math.random() * 3) + 1;
-  return [MUST_HAVE_TECH, ...shuffled.slice(0, extraCount)];
-}
-
-/* =========================
- 3) 軽い整形ユーティリティ
+ 2) 軽い整形ユーティリティ
 ========================= */
 function ensureTsukkomiOutro(text, tsukkomiName = "B") {
   const outro = `${tsukkomiName}: もういいよ`;
@@ -103,40 +90,28 @@ function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }
   if (generalLines.length) parts.push("【全般の構成技法】", ...generalLines);
   return parts.join("\n");
 }
-function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
-  const toLabel = (ids, table) => ids.filter((k) => table[k]).map((k) => table[k].split("：")[0]);
-  return {
-    boke: toLabel(boke, BOKE_DEFS),
-    tsukkomi: toLabel(tsukkomi, TSUKKOMI_DEFS),
-    general: toLabel(general, GENERAL_DEFS),
-  };
-}
 
 /* =========================
- 4) プロンプト生成（最初の指定文字数のみ利用）
+ 3) プロンプト生成（指定文字数のみ利用）
 ========================= */
 function buildPrompt({ theme, genre, characters, length, selected }) {
   const safeTheme = theme?.toString().trim() || "身近な題材";
   const safeGenre = genre?.toString().trim() || "一般";
   const names = (characters?.toString().trim() || "A,B")
     .split(/[、,]/).map((s) => s.trim()).filter(Boolean).slice(0, 4);
-
   const targetLen = Math.min(Number(length) || 350, 2000);
 
   const hasNewSelection =
     (selected?.boke?.length || 0) + (selected?.tsukkomi?.length || 0) + (selected?.general?.length || 0) > 0;
-
   let guideline = "";
   if (hasNewSelection) {
     guideline = buildGuidelineFromSelections(selected);
   } else {
-    const usedTechs = pickTechniquesWithMetaphor();
-    guideline =
-      "【採用する技法（自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
+    const usedTechs = ["比喩ツッコミ", "意外性と納得感", "すれ違い"];
+    guideline = "【採用する技法】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
   }
 
   const tsukkomiName = names[1] || "B";
-
   const prompt = [
     "あなたは実力派の漫才師コンビです。日本語の漫才台本を作成してください。",
     "",
@@ -145,36 +120,38 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     `■登場人物: ${names.join("、")}`,
     `■目標文字数: 約 ${targetLen} 文字（本文全体の分量の目安として守る）`,
     "",
-    "■必須の構成",
-    "- 1) フリ（導入）",
-    "- 2) 伏線回収",
-    "- 3) 最後は明確な“オチ”",
+    "■構成",
+    "- フリ（導入）",
+    "- 伏線回収",
+    "- 明確なオチ",
     "",
-    "■選択された技法（技法の名称は本文に出さないこと）",
-    guideline || "（特に指定なし）",
+    "■選択された技法",
+    guideline,
     "",
     "■形式",
     "- 各台詞は「名前: セリフ」（半角コロン＋半角スペース）",
-    "- 台詞と台詞の間に空行を1つ入れる",
-    "- 解説・メタ記述は禁止。本文のみ",
+    "- 台詞ごとに空行を1つ入れる",
+    "- 解説・メタ記述は禁止",
     `- 最後は必ず ${tsukkomiName}: もういいよ で締める`,
     "",
     "■見出し",
     "- 最初の1行に【タイトル】、その後に本文（会話）を続ける",
+    "",
+    "本文は最低12行以上の会話形式とし、テンポよく展開すること。",
   ].join("\n");
 
   return { prompt, tsukkomiName, targetLen, guideline };
 }
 
 /* =========================
- 5) OpenAI (ChatGPT) 呼び出し
+ 4) OpenAI 呼び出し
 ========================= */
 const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
 /* =========================
- 6) 失敗理由の整形
+ 5) 失敗理由の整形
 ========================= */
 function normalizeError(err) {
   return {
@@ -187,16 +164,21 @@ function normalizeError(err) {
 }
 
 /* =========================
- 7) HTTP ハンドラ（生成のみ・シンプル）
+ 6) HTTP ハンドラ（生成のみ・安定版）
 ========================= */
 export default async function handler(req, res) {
   try {
-    if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
+    if (req.method !== "POST")
+      return res.status(405).json({ error: "Method Not Allowed" });
 
-    const { theme, genre, characters, length, boke, tsukkomi, general } = req.body || {};
+    const { theme, genre, characters, length, boke, tsukkomi, general } =
+      req.body || {};
 
     const { prompt, tsukkomiName, targetLen, guideline } = buildPrompt({
-      theme, genre, characters, length,
+      theme,
+      genre,
+      characters,
+      length,
       selected: {
         boke: Array.isArray(boke) ? boke : [],
         tsukkomi: Array.isArray(tsukkomi) ? tsukkomi : [],
@@ -204,11 +186,14 @@ export default async function handler(req, res) {
       },
     });
 
-    // 安全側にクランプ（日本語1文字≒3tokens、かつプロンプト分を考慮）
-    const approxMaxTok = Math.min(3000, Math.ceil(Math.max(targetLen, 300) * 3));
+    const approxMaxTok = Math.min(8192, Math.max(1200, Math.ceil(targetLen * 3)));
 
     const messages = [
-      { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },
+      {
+        role: "system",
+        content:
+          "あなたは実力派の漫才師コンビです。舞台で即使える完成度の高い日本語の漫才台本を出力してください。解説や説明は禁止です。",
+      },
       { role: "user", content: prompt },
     ];
 
@@ -217,23 +202,26 @@ export default async function handler(req, res) {
       completion = await client.chat.completions.create({
         model: process.env.OPENAI_MODEL || "gpt-5",
         messages,
-        max_completion_tokens: approxMaxTok,
+        max_completion_token: approxMaxTok,
       });
     } catch (err) {
       const e = normalizeError(err);
       console.error("[openai error]", e);
-      return res.status(e.status || 500).json({ error: "OpenAI request failed", detail: e });
+      return res
+        .status(e.status || 500)
+        .json({ error: "OpenAI request failed", detail: e });
     }
 
-    // 整形（後処理での再カットや追記はしない）
     let raw = completion?.choices?.[0]?.message?.content?.trim() || "";
     let { title, body } = splitTitleAndBody(raw);
+
     body = normalizeSpeakerColons(body);
     body = ensureBlankLineBetweenTurns(body);
     body = ensureTsukkomiOutro(body, tsukkomiName);
 
     const success = typeof body === "string" && body.trim().length > 0;
-    if (!success) return res.status(500).json({ error: "Empty output" });
+    if (!success)
+      return res.status(500).json({ error: "Empty output", raw: raw || null });
 
     return res.status(200).json({
       title: title || "（タイトル未設定）",
@@ -247,6 +235,8 @@ export default async function handler(req, res) {
   } catch (err) {
     const e = normalizeError(err);
     console.error("[handler error]", e);
-    return res.status(500).json({ error: "Server Error", detail: e });
+    return res
+      .status(500)
+      .json({ error: "Server Error", detail: e });
   }
 }
