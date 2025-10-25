@@ -330,7 +330,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
     { role: "user", content: contPrompt },
   ];
 
-  const approxTok = Math.min(8192, Math.ceil(Math.max(remainingChars * 2, 400) * 3)); // ★余裕UP
+  const approxTok = Math.min(8192, Math.ceil(Math.max(remainingChars * 2, 3000) * 3)); // ★余裕UP
   const resp = await client.chat.completions.create({
     model,
     messages,
@@ -407,7 +407,7 @@ export default async function handler(req, res) {
       { role: "user", content: prompt },
     ];
     const payload = {
-      model: process.env.XAI_MODEL || "grok-4",
+      model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
       messages,
       temperature: 0.8,
       max_output_tokens: approxMaxTok,
