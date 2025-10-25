@@ -217,7 +217,7 @@ export default async function handler(req, res) {
       completion = await client.chat.completions.create({
         model: process.env.OPENAI_MODEL || "gpt-5",
         messages,
-        max_tokens: approxMaxTok,
+        max_completion_tokens: approxMaxTok,
       });
     } catch (err) {
       const e = normalizeError(err);
