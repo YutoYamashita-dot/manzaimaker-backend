@@ -165,6 +165,15 @@ function ensureTsukkomiOutro(text, tsukkomiName = "B") {
   return text.replace(/\s*$/, "") + "\n" + outro;
 }
 
+/* === ★ 追加：最後の「もういいよ」を“ちょうど1回だけ”にする === */
+function ensureSingleOutro(text, tsukkomiName = "B") {
+  const required = `${tsukkomiName}: もういいよ`;
+  const lines = (text || "").replace(/\r\n/g, "\n").split("\n");
+  const filtered = lines.filter((ln) => ln.trim() !== required);
+  while (filtered.length > 0 && filtered[filtered.length - 1].trim() === "") filtered.pop();
+  return [...filtered, required].join("\n");
+}
+
 /* 行頭の「名前：/名前:」を「名前: 」に正規化 */
 function normalizeSpeakerColons(s) {
   return s.replace(/(^|\n)([^\n:：]+)[：:]\s*/g, (_m, head, name) => `${head}${name}: `);
@@ -329,6 +338,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
   cont = normalizeSpeakerColons(cont);
   cont = ensureBlankLineBetweenTurns(cont);
   cont = ensureTsukkomiOutro(cont, tsukkomiName);
+  cont = ensureSingleOutro(cont, tsukkomiName); // ★ ちょうど1回に統一
   return (seed + "\n" + cont).trim();
 }
 
@@ -417,6 +427,7 @@ export default async function handler(req, res) {
     body = normalizeSpeakerColons(body);
     body = ensureBlankLineBetweenTurns(body);
     body = ensureTsukkomiOutro(body, tsukkomiName);
+    body = ensureSingleOutro(body, tsukkomiName); // ★ ちょうど1回に統一
 
     // 指定文字数との差を補う
     const deficit = targetLen - body.length;
@@ -433,6 +444,7 @@ export default async function handler(req, res) {
         body = normalizeSpeakerColons(body);
         body = ensureBlankLineBetweenTurns(body);
         body = ensureTsukkomiOutro(body, tsukkomiName);
+        body = ensureSingleOutro(body, tsukkomiName); // ★ ちょうど1回に統一
       } catch (e) {
         console.warn("[continuation] failed:", e?.message || e);
       }
@@ -440,6 +452,7 @@ export default async function handler(req, res) {
 
     // ★ 最終レンジ調整：上下10%の範囲に収める（allowOverflow=false）
     body = enforceCharLimit(body, minLen, maxLen, false);
+    body = ensureSingleOutro(body, tsukkomiName); // ★ 調整後も“最後に1回だけ”を保証
 
     // 成功判定：★本文非空のみ（語尾揺れで落とさない）
     const success = typeof body === "string" && body.trim().length > 0;
