@@ -45,8 +45,6 @@ async function incrementUsage(user_id, delta = 1) {
 
 /* === ★ 課金ユーティリティ（後払い消費：失敗時は絶対に減らさない） === */
 const FREE_QUOTA = 20;
-// ★ 追加：広告あり版の無料枠（2回）
-const FREE_QUOTA_AD = 2;
 
 async function getUsageRow(user_id) {
   if (!hasSupabase || !user_id) return { output_count: 0, paid_credits: 0 };
@@ -68,24 +66,22 @@ async function setUsageRow(user_id, { output_count, paid_credits }) {
 }
 
 /** 生成前：残高チェックのみ（消費しない） */
-// ★ 修正：可変グローバルを使わず、現在の無料枠を引数で受け取る
-async function checkCredit(user_id, currentFreeQuota) {
+async function checkCredit(user_id) {
   if (!hasSupabase || !user_id) return { ok: true, row: null };
   const row = await getUsageRow(user_id);
   const used = row.output_count ?? 0;
   const paid = row.paid_credits ?? 0;
-  return { ok: used < currentFreeQuota || paid > 0, row };
+  return { ok: used < FREE_QUOTA || paid > 0, row };
 }
 
 /** 生成成功後：ここで初めて消費（無料→有料の順） */
-// ★ 修正：可変グローバルを使わず、現在の無料枠を引数で受け取る
-async function consumeAfterSuccess(user_id, currentFreeQuota) {
+async function consumeAfterSuccess(user_id) {
   if (!hasSupabase || !user_id) return { consumed: null };
   const row = await getUsageRow(user_id);
   const used = row.output_count ?? 0;
   const paid = row.paid_credits ?? 0;
 
-  if (used < currentFreeQuota) {
+  if (used < FREE_QUOTA) {
     await setUsageRow(user_id, { output_count: used + 1, paid_credits: paid });
     return { consumed: "free" };
   }
@@ -167,18 +163,6 @@ function ensureTsukkomiOutro(text, tsukkomiName = "B") {
   if (!text) return outro;
   if (/もういいよ\s*$/.test(text)) return text;
   return text.replace(/\s*$/, "") + "\n" + outro;
-}
-
-/* === ★ 追加：最後の「もういいよ」を“ちょうど1回だけ”にする === */
-function ensureSingleOutro(text, tsukkomiName = "B") {
-  const required = `${tsukkomiName}: もういいよ`;
-  const lines = (text || "").replace(/\r\n/g, "\n").split("\n");
-  // 既存の「もういいよ」行をすべて除去
-  const filtered = lines.filter((ln) => ln.trim() !== required);
-  // 末尾の空行を除去
-  while (filtered.length > 0 && filtered[filtered.length - 1].trim() === "") filtered.pop();
-  // 最後に 1 回だけ付与
-  return [...filtered, required].join("\n");
 }
 
 /* 行頭の「名前：/名前:」を「名前: 」に正規化 */
@@ -378,21 +362,12 @@ export default async function handler(req, res) {
 
     const { theme, genre, characters, length, boke, tsukkomi, general, user_id } = req.body || {};
 
-    // ★ 追加：広告あり/なしの判定を FREE_QUOTA では行わない（client_app / user_id のタグでのみ判定）
-    const bodyApp = (req.body?.client_app || "").toString();
-    const isAdClient =
-      bodyApp.toUpperCase() === "AD_VERSION" ||
-      (typeof user_id === "string" && user_id.toUpperCase().includes(":AD_VERSION"));
-
-    // ★ リクエスト単位の無料枠（可変グローバルを使わない）
-    const currentFreeQuota = isAdClient ? FREE_QUOTA_AD : FREE_QUOTA;
-
     // 生成前：残高チェックのみ（消費なし）
-    const gate = await checkCredit(user_id, currentFreeQuota);
+    const gate = await checkCredit(user_id);
     if (!gate.ok) {
       const row = gate.row || { output_count: 0, paid_credits: 0 };
       return res.status(403).json({
-        error: `使用上限（${currentFreeQuota}回）に達しており、クレジットが不足しています。`,
+        error: `使用上限（${FREE_QUOTA}回）に達しており、クレジットが不足しています。`,
         usage_count: row.output_count,
         paid_credits: row.paid_credits,
       });
@@ -411,7 +386,7 @@ export default async function handler(req, res) {
     });
 
     // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
-    const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
+    const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 5000) * 3));
     const messages = [
       { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },
       { role: "user", content: prompt },
@@ -434,7 +409,7 @@ export default async function handler(req, res) {
       return res.status(e.status || 500).json({ error: "xAI request failed", detail: e });
     }
 
-    // 整形（順序：正規化 → 空行 → 一旦アウトロ付与 → 最終一回化 → 文字数調整 → 再度一回化）
+    // 整形（★順序を安定化：normalize → 空行 → 落ち付与）
     let raw = completion?.choices?.[0]?.message?.content?.trim() || "";
     let { title, body } = splitTitleAndBody(raw);
 
@@ -442,45 +417,39 @@ export default async function handler(req, res) {
     body = normalizeSpeakerColons(body);
     body = ensureBlankLineBetweenTurns(body);
     body = ensureTsukkomiOutro(body, tsukkomiName);
-    body = ensureSingleOutro(body, tsukkomiName); // ★ 最後は“ちょうど1回だけ”
 
-    // 文字数の最終レンジ調整（±10%）
+    // 指定文字数との差を補う
+    const deficit = targetLen - body.length;
+    if (deficit >= 30) {
+      try {
+        body = await generateContinuation({
+          client,
+          model: process.env.XAI_MODEL || "grok-4",
+          baseBody: body,
+          remainingChars: deficit,
+          tsukkomiName,
+        });
+        // 追記後も同じ順序で仕上げ
+        body = normalizeSpeakerColons(body);
+        body = ensureBlankLineBetweenTurns(body);
+        body = ensureTsukkomiOutro(body, tsukkomiName);
+      } catch (e) {
+        console.warn("[continuation] failed:", e?.message || e);
+      }
+    }
+
+    // ★ 最終レンジ調整：上下10%の範囲に収める（allowOverflow=false）
     body = enforceCharLimit(body, minLen, maxLen, false);
-    body = ensureSingleOutro(body, tsukkomiName); // ★ 調整で消えても必ず 1 回に
 
-    // ★ ここで「指定文字数より10%以上少ない」なら絶対にクレジットを減らさない
-    const actualLen = body.length;
-    const minRequired = Math.ceil((Number(length) || 350) * 0.9);
-    const isTooShort = actualLen < minRequired;
-
-    // 成功判定：本文非空のみ
+    // 成功判定：★本文非空のみ（語尾揺れで落とさない）
     const success = typeof body === "string" && body.trim().length > 0;
     if (!success) {
       // 失敗：消費しない
       return res.status(500).json({ error: "Empty output" });
     }
 
-    // 成功だが短すぎる場合：本文は返すがクレジットは絶対に減らさない
-    if (isTooShort) {
-      return res.status(200).json({
-        title: title || "（タイトル未設定）",
-        text: body,
-        meta: {
-          structure: structureMeta,
-          techniques: techniquesForMeta,
-          usage_count: (await getUsageRow(user_id)).output_count, // 変化なし
-          paid_credits: (await getUsageRow(user_id)).paid_credits, // 変化なし
-          target_length: targetLen,
-          min_required_length: minRequired,
-          actual_length: actualLen,
-          credit_consumed: false,               // ★ 課金消費なしを明示
-          note: "Output length below 90% of requested; credit not consumed.",
-        },
-      });
-    }
-
-    // 成功：ここで初めて消費（無料枠はリクエストごとの currentFreeQuota で判定）
-    await consumeAfterSuccess(user_id, currentFreeQuota);
+    // 成功：ここで初めて消費
+    await consumeAfterSuccess(user_id);
 
     // 残量取得
     let metaUsage = null;
@@ -507,7 +476,6 @@ export default async function handler(req, res) {
         min_length: minLen,
         max_length: maxLen,
         actual_length: body.length,
-        credit_consumed: true, // 消費済み
       },
     });
   } catch (err) {
