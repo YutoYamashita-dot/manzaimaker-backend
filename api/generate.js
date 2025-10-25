@@ -185,6 +185,33 @@ function normalizeSpeakerColons(s) {
   return s.replace(/(^|\n)([^\n:：]+)[：:]\s*/g, (_m, head, name) => `${head}${name}: `);
 }
 
+/* ★ 追加：台詞同士の間に必ず1行の空行を挟む（重複空行は圧縮） */
+function ensureBlankLineBetweenTurns(text) {
+  const lines = text.split("\n");
+
+  // 連続空行は1つに圧縮
+  const compressed = [];
+  for (const ln of lines) {
+    if (ln.trim() === "" && compressed.length && compressed[compressed.length - 1].trim() === "") continue;
+    compressed.push(ln);
+  }
+
+  const out = [];
+  for (let i = 0; i < compressed.length; i++) {
+    const cur = compressed[i];
+    out.push(cur);
+
+    const isTurn = /^[^:\n：]+:\s/.test(cur.trim());
+    const next = compressed[i + 1];
+    const nextIsTurn = next != null && /^[^:\n：]+:\s/.test(next.trim());
+
+    if (isTurn && nextIsTurn) {
+      if (cur.trim() !== "" && next.trim() !== "") out.push(""); // 1空行を追加
+    }
+  }
+  return out.join("\n").replace(/\n{3,}/g, "\n\n");
+}
+
 /* =========================
    3.6) タイトル/本文の分割
    ========================= */
@@ -220,7 +247,7 @@ function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
 }
 
 /* =========================
-   5) プロンプト生成（最小長・行数・早期終了禁止を明示）
+   5) プロンプト生成（±10%バンド厳守で必ず収める）
    ========================= */
 function buildPrompt({ theme, genre, characters, length, selected }) {
   const safeTheme = theme && String(theme).trim() ? String(theme).trim() : "身近な題材";
@@ -231,10 +258,13 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     .filter(Boolean)
     .slice(0, 4);
 
+  // ユーザー指定（上限 2000）
   const targetLen = Math.min(Number(length) || 350, 2000);
+
+  // ±10% の厳密バンドを計算（この範囲に必ず収める）
   const minLen = Math.max(100, Math.floor(targetLen * 0.9));
-  const maxLen = targetLen;
-  const minLines = Math.max(12, Math.ceil(minLen / 35)); // 1行25〜40字想定で下限行数
+  const maxLen = Math.ceil(targetLen * 1.1);
+  const minLines = Math.max(12, Math.ceil(minLen / 35)); // 目安の行数下限
 
   const hasNewSelection =
     (selected?.boke?.length || 0) + (selected?.tsukkomi?.length || 0) + (selected?.general?.length || 0) > 0;
@@ -257,13 +287,14 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
 
   const tsukkomiName = names[1] || "B";
 
+  // ★ 文字数要件を「必ず ±10% に収める」よう明示 + 台詞間に空行
   const prompt = [
     "あなたは実力派の漫才師コンビです。日本語の漫才台本を作成してください。",
     "",
     `■題材: ${safeTheme}`,
     `■ジャンル: ${safeGenre}`,
     `■登場人物: ${names.join("、")}`,
-    `■目標文字数: **最低 ${minLen} 文字以上 ${maxLen} 文字以下**（最低文字数に到達するまで**絶対に終了しない**。ただし、上限は超えても良い）`,
+    `■目標文字数: **${minLen}〜${maxLen}文字（必ずこの範囲内に収める。範囲外は不可）**`,
     "",
     "■必須の構成",
     "- 1) フリ（導入）",
@@ -276,6 +307,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "■分量・形式の厳守（ここは必須要件）",
     `- 会話の行数は **少なくとも ${minLines} 行以上**（1台詞あたり 25〜40 文字目安）。`,
     "- 各台詞は「名前: セリフ」の形式（半角コロン＋半角スペース `:` を使う）。",
+    "- **各台詞の間には必ず空行を1つ入れる（Aの行とBの行の間を1行空ける）。**",
     "- 出力は本文のみ（解説・メタ記述や途中での打ち切りを禁止）。",
     `- 最後は必ず **${tsukkomiName}: もういいよ** の一行で締める（この行は文字数に含める）。`,
     "- 「比喩」「皮肉」「風刺」と直接本文に書かない。",
@@ -301,6 +333,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
     "・これまでの台詞やネタの反復はしない",
     `・少なくとも **${remainingChars} 文字以上**、自然に展開し、最後は **${tsukkomiName}: もういいよ** で締める`,
     "・各行は「名前: セリフ」の形式（半角コロン＋スペース）",
+    "・台詞同士の間には必ず空行を1つ挟む",
     "",
     "【これまでの本文】",
     seed,
@@ -323,6 +356,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
   let cont = resp?.choices?.[0]?.message?.content?.trim() || "";
   cont = normalizeSpeakerColons(cont);
   cont = ensureTsukkomiOutro(cont, tsukkomiName);
+  cont = ensureBlankLineBetweenTurns(cont);
   return (seed + "\n" + cont).trim();
 }
 
@@ -348,7 +382,7 @@ function normalizeError(err) {
 }
 
 /* =========================
-   7) HTTP ハンドラ（後払い消費＋長文対策＋30字以上不足なら追記）
+   7) HTTP ハンドラ（後払い消費＋±10%厳守＋不足時追記）
    ========================= */
 export default async function handler(req, res) {
   try {
@@ -410,13 +444,14 @@ export default async function handler(req, res) {
     let raw = completion?.choices?.[0]?.message?.content?.trim() || "";
     let { title, body } = splitTitleAndBody(raw);
 
-    // ★ 指定文字数以上でもカットしない（allowOverflow=true）
+    // ベース整形（まずは上限切らず・締め句付与・形式統一・台詞間空行）
     body = enforceCharLimit(body, minLen, Number.MAX_SAFE_INTEGER, true);
     body = ensureTsukkomiOutro(body, tsukkomiName);
     body = normalizeSpeakerColons(body);
+    body = ensureBlankLineBetweenTurns(body);
 
-    // ★ 指定文字数より 30 文字以上足りなければ追記する
-    const deficit = (Number(length) || targetLen) - body.length;
+    // 指定文字数より 30 文字以上足りなければ追記
+    const deficit = targetLen - body.length;
     if (deficit >= 30) {
       try {
         body = await generateContinuation({
@@ -426,23 +461,26 @@ export default async function handler(req, res) {
           remainingChars: deficit,
           tsukkomiName,
         });
-        // 追記後も “カットしない” 方針を維持（締めと整形のみ）
+        // 追記後も仕上げ（締め句・コロン統一・台詞間空行）
         body = ensureTsukkomiOutro(body, tsukkomiName);
         body = normalizeSpeakerColons(body);
+        body = ensureBlankLineBetweenTurns(body);
       } catch (e) {
         console.warn("[continuation] failed:", e?.message || e);
-        // 追記失敗時はそのまま返す（課金は後述の成功条件で判断）
+        // 追記失敗時はそのまま（後で最終レンジで調整）
       }
     }
 
-    // 生成成功判定（最低限：本文がある・締め句がある）
+    // ★ 最後に「必ず ±10% バンド内」に収める（上限もここで穏やかに調整）
+    body = enforceCharLimit(body, minLen, maxLen, false);
+
+    // 成功判定（本文あり＆締め句）
     const success = body && /もういいよ\s*$/.test(body);
     if (!success) {
-      // 後払い方式なので消費なしのままエラー返却
       return res.status(500).json({ error: "Empty or incomplete output" });
     }
 
-    // ここで初めて“実消費”（無料枠 or 有料クレジット）
+    // 実消費（無料枠 or 有料クレジット）
     await consumeAfterSuccess(user_id);
 
     // 返却用：最新の残量取得
@@ -466,6 +504,11 @@ export default async function handler(req, res) {
         techniques: techniquesForMeta,
         usage_count: metaUsage,
         paid_credits: metaCredits,
+        // デバッグに便利：最終長とバンド
+        target_length: targetLen,
+        min_length: minLen,
+        max_length: maxLen,
+        actual_length: body.length,
       },
     });
   } catch (err) {
