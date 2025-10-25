@@ -277,10 +277,12 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 各台詞は「名前: セリフ」の形式（半角コロン＋半角スペース `:` を使う）。",
     "- 出力は本文のみ（解説・メタ記述や途中での打ち切りを禁止）。",
     `- 最後は必ず **${tsukkomiName}: もういいよ** の一行で締める（この行は文字数に含める）。`,
-    "",
+    "- 「比喩」「皮肉」「風刺」と直接本文に書かない。",
     "■見出し・書式",
     "- 最初の1行に【タイトル】を入れ、その直後に本文（会話）を続ける",
     "- タイトルと本文の間には必ず空行を1つ入れる",
+    "■その他",
+　　 "- 人間にとって「意外性」のある表現を使う。",
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName };
