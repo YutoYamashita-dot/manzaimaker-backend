@@ -299,6 +299,10 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "■見出し・書式",
     "- 最初の1行に【タイトル】を入れ、その直後に本文（会話）を続ける",
     "- タイトルと本文の間には必ず空行を1つ入れる",
+    "■その他",
+    "- 人間にとって「意外性」のある表現を使う。",
+    "- 登場人物の個性を反映する。",
+    "- 映画の三幕構成のような話とする。",
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen };
@@ -396,7 +400,7 @@ export default async function handler(req, res) {
     });
 
     // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
-    const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 5000) * 3));
+    const approxMaxTok = Math.min(7000, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
     const messages = [
       { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },
       { role: "user", content: prompt },
