@@ -420,7 +420,7 @@ const messages = [
   { role: "user", content: prompt },  
 ];  
 const payload = {  
-  model: process.env.OPENAI_MODEL || "gpt-5",  
+  model: process.env.OPENAI_MODEL || "gpt-5-mini",  
   messages,  
   max_completion_tokens: approxMaxTok,  
 };
@@ -449,7 +449,7 @@ if (deficit >= 30) {
   try {  
     body = await generateContinuation({  
       client,  
-      model: process.env.OPENAI_MODEL || "gpt-5",  
+      model: process.env.OPENAI_MODEL || "gpt-5-mini",  
       baseBody: body,  
       remainingChars: deficit,  
       tsukkomiName,  
