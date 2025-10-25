@@ -302,7 +302,7 @@ guideline || "（特に指定なし）",
 "- 各台詞は「名前: セリフ」の形式（半角コロン＋半角スペース : を使う）。",
 "- 各台詞の間には必ず空行を1つ入れる（Aの行とBの行の間を1行空ける）。",
 "- 出力は本文のみ（解説・メタ記述や途中での打ち切りを禁止）。",
-`- 最後は必ず ${tsukkomiName}: もういいよ の一行で締める（この行は文字数に含める）。`,
+// ここで「もういいよ」を強制しない
 "- 「緊張感のある状態」とそれが「緩和する状態」を必ず作る。",
 "- 選択された技法をしっかり使う。",
 "■見出し・書式",
@@ -326,7 +326,7 @@ const contPrompt = [
 "以下は途中まで書かれた漫才の本文です。これを“そのまま続けてください”。",
 "・タイトルは出さない",
 "・これまでの台詞やネタの反復はしない",
-"・少なくとも ${remainingChars} 文字以上、自然に展開し、最後は ${tsukkomiName}: もういいよ で締める",
+// ここで「最後は もういいよ で締める」を要求しない
 "・各行は「名前: セリフ」の形式（半角コロン＋スペース）",
 "・台詞同士の間には必ず空行を1つ挟む",
 "",
@@ -353,7 +353,7 @@ const resp = await client.chat.completions.create(req);
 let cont = resp?.choices?.[0]?.message?.content?.trim() || "";
 cont = normalizeSpeakerColons(cont);
 cont = ensureBlankLineBetweenTurns(cont);
-cont = ensureTsukkomiOutro(cont, tsukkomiName);
+// ここではもういいよを付けない
 return (seed + "\n" + cont).trim();
 
 }
@@ -458,41 +458,8 @@ if (deficit >= 30) {
   }  
 }  
 
-// 追加フォールバック：まだ足りなければ軽く追記（タイトルは触らない）
-if (body.length < minLen) {
-  try {
-    const need = Math.max(minLen - body.length, 80);
-    const extendMessages = [
-      { role: "system", content: "あなたは実力派の漫才師コンビです。今から渡す本文の“続きだけ”を追加してください。タイトルは出力しないでください。最後の「もういいよ」は付けないでください。" },
-      { role: "user", content: `少なくとも ${need} 文字以上、自然に会話を続けてください。\n\n【本文】\n${body}` },
-    ];
-    const ext = await client.chat.completions.create({
-      model: process.env.OPENAI_MODEL || "gpt-5",
-      messages: extendMessages,
-      max_completion_tokens: Math.min(2048, Math.max(Math.ceil(need * 2), 300)),
-    });
-    const add = ext?.choices?.[0]?.message?.content?.trim() || "";
-    if (add) {
-      body = (body + "\n" + add).trim();
-      body = normalizeSpeakerColons(body);
-      body = ensureBlankLineBetweenTurns(body);
-    }
-  } catch (e) {
-    console.warn("[extend] fallback failed:", e?.message || e);
-  }
-}
-
-// 最終レンジ調整 → ここで初めてオチを強制付与
+// 最終レンジ調整（ここでも「もういいよ」は付けない）
 body = enforceCharLimit(body, minLen, maxLen, false);  
-body = ensureTsukkomiOutro(body, tsukkomiName);
-
-// タイトル補完：空なら本文先頭から自動生成
-if (!title || !title.trim()) {
-  const sample = body.replace(/\n+/g, " ").slice(0, 20).trim();
-  if (sample) {
-    title = `${sample}…`;
-  }
-}
 
 // 成功判定
 const success = typeof body === "string" && body.trim().length > 0;  
@@ -537,3 +504,4 @@ console.error("[handler error]", e);
 return res.status(500).json({ error: "Server Error", detail: e });
 }
 }
+
