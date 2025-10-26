@@ -266,7 +266,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
   const tsukkomiName = names[1] || "B";
 
   const prompt = [
-    "あなたは実力派の漫才師コンビです。日本語の漫才台本を作成してください。",
+    "あなたは実力派の漫才師コンビです。「選択された技法」を必ず使い、日本語の漫才台本を作成してください。",
     "",
     `■題材: ${safeTheme}`,
     `■ジャンル: ${safeGenre}`,
@@ -283,7 +283,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 下記の各技法は **すべて** 本文中で最低1回以上、観客に伝わる具体的な台詞や展開として **必ず** 用いること（未使用は不可）。",
     "- 出力前に **自己チェック** を行い、未使用の技法がある場合は **本文を追記** して満たしてから出力を終えること。",
     "- 技法名や“この技法を使う”といったメタ表現は本文に **絶対に書かない**。",
-    guideline || "（特に指定なし）",
+    guideline || "",
     "",
     "■分量・形式の厳守",
     `- 会話の行数は 少なくとも ${minLines} 行以上（1台詞あたり 25〜40 文字目安）。`,
