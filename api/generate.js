@@ -8,6 +8,7 @@ export const config = { runtime: "nodejs" };
 
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
+import { detectLang, LANG_NAME, SPEAKER_TAGS } from "../utils/lang.js";
 
 /* =========================
    Supabase Client
@@ -235,7 +236,8 @@ function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
 /* =========================
    5) プロンプト生成（±10%バンド厳守）
    ========================= */
-function buildPrompt({ theme, genre, characters, length, selected }) {
+// ★ 言語対応：outLangName を追加（その他ロジックは変更なし）
+function buildPrompt({ theme, genre, characters, length, selected, outLangName = "English" }) {
   const safeTheme = theme?.toString().trim() || "身近な題材";
   const safeGenre = genre?.toString().trim() || "一般";
   const names = (characters?.toString().trim() || "A,B")
@@ -270,7 +272,9 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
   const tsukkomiName = names[1] || "B";
 
   const prompt = [
-    "あなたは実力派の漫才師コンビです。「選択された技法」を必ず使い、日本語の漫才台本を作成してください。",
+    // ★ ここだけ言語指定を追記：出力は outLangName で
+    `あなたは実力派の漫才師コンビです。「選択された技法」を必ず使い、出力は必ず ${outLangName}（タイトル・本文ともに）で書いてください。`,
+    "もし指定言語以外が混ざった場合は、すべて指定言語に書き直してから出力してください。",
     "",
     `■題材: ${safeTheme}`,
     `■ジャンル: ${safeGenre}`,
@@ -388,6 +392,11 @@ export default async function handler(req, res) {
       });
     }
 
+    // ★ 言語判定（lang 指定 > Accept-Language > en）
+    const explicitLang = (req.body?.lang || req.query?.lang || "").toLowerCase?.() || "";
+    const outLangCode = detectLang(req, explicitLang);
+    const outLangName = LANG_NAME[outLangCode] || "English";
+
     const { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen } = buildPrompt({
       theme,
       genre,
@@ -398,6 +407,8 @@ export default async function handler(req, res) {
         tsukkomi: Array.isArray(tsukkomi) ? tsukkomi : [],
         general: Array.isArray(general) ? general : [],
       },
+      // ★ 出力言語名をプロンプトに注入
+      outLangName,
     });
 
     // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
