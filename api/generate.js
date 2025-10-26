@@ -10,16 +10,16 @@ import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
 
 /* =========================
-  Supabase Client
-========================= */
+   Supabase Client
+   ========================= */
 const SUPABASE_URL = process.env.SUPABASE_URL || "";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "";
 const hasSupabase = !!(SUPABASE_URL && SUPABASE_KEY);
 const supabase = hasSupabase ? createClient(SUPABASE_URL, SUPABASE_KEY) : null;
 
 /* =========================
-  既存互換ユーティリティ（そのまま維持）
-========================= */
+   既存互換ユーティリティ（そのまま維持）
+   ========================= */
 async function incrementUsage(user_id, delta = 1) {
   if (!hasSupabase || !user_id) return null;
   try {
@@ -80,7 +80,6 @@ async function consumeAfterSuccess(user_id) {
   const row = await getUsageRow(user_id);
   const used = row.output_count ?? 0;
   const paid = row.paid_credits ?? 0;
-
   if (used < FREE_QUOTA) {
     await setUsageRow(user_id, { output_count: used + 1, paid_credits: paid });
     return { consumed: "free" };
@@ -93,8 +92,8 @@ async function consumeAfterSuccess(user_id) {
 }
 
 /* =========================
-  1. 技法 定義テーブル（削除せず維持）
-========================= */
+   技法 定義テーブル（削除せず維持）
+   ========================= */
 const BOKE_DEFS = {
   IIMACHIGAI:
     "言い間違い／聞き間違い：音韻のズレで意外性を生むボケ（例：「カニ食べ行こう」→「紙食べ行こう？」）。",
@@ -127,8 +126,8 @@ const GENERAL_DEFS = {
 };
 
 /* =========================
-  2) 旧仕様：ランダム技法（維持）
-========================= */
+   2) 旧仕様：ランダム技法（維持）
+   ========================= */
 const MUST_HAVE_TECH = "比喩ツッコミ";
 function pickTechniquesWithMetaphor() {
   const pool = ["風刺", "皮肉", "意外性と納得感", "勘違い→訂正", "言い間違い→すれ違い", "立場逆転", "具体例の誇張"];
@@ -138,11 +137,16 @@ function pickTechniquesWithMetaphor() {
 }
 
 /* =========================
-  3) 文字数の最終調整
-========================= */
+   3) 文字数の最終調整
+   ========================= */
 function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
   if (!text) return "";
-  let t = text.trim().replace(/```[\s\S]*?```/g, "").replace(/^#{1,6}\s.*$/gm, "").trim();
+  // 本文から不要なコードブロックや見出しを軽く除去（構文を修正）
+  let t = text
+    .trim()
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/^#{1,6}\s.*$/gm, "")
+    .trim();
 
   if (!allowOverflow && t.length > maxLen) {
     const softCut = t.lastIndexOf("\n", maxLen);
@@ -158,28 +162,13 @@ function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
 }
 
 /* =========================
-  3.5) 最終行の強制付与
-========================= */
+   3.5) 最終行の強制付与
+   ========================= */
 function ensureTsukkomiOutro(text, tsukkomiName = "B") {
-  const outro = `${tsukkomiName}: もういいよ！`;
+  const outro = `${tsukkomiName}: もういいよ`;
   if (!text) return outro;
   if (/もういいよ\s*$/.test(text)) return text;
   return text.replace(/\s*$/, "") + "\n" + outro;
-}
-
-/* === 追加：最後の「もういいよ」を“必ず1回だけ最後に”する === */
-function ensureSingleOutro(text, tsukkomiName = "B") {
-  const required = `${tsukkomiName}: もういいよ！`;
-  // 末尾に既に「もういいよ」「もういいよ!」「もういいよ！」がある場合は削除して付け直す
-  const outroRegex = new RegExp(
-    String.raw`(?:\r?\n)?\s*` +
-      tsukkomiName.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&") +
-      String.raw`:\s*もういいよ[！!]?` +
-      String.raw`\s*$`
-  );
-  let t = (text || "").replace(outroRegex, "");
-  t = t.replace(/\s+$/, "");
-  return (t ? t + "\n" : "") + required;
 }
 
 /* 行頭の「名前：/名前:」を「名前: 」に正規化 */
@@ -210,8 +199,8 @@ function ensureBlankLineBetweenTurns(text) {
 }
 
 /* =========================
-  3.6) タイトル/本文の分割
-========================= */
+   3.6) タイトル/本文の分割
+   ========================= */
 function splitTitleAndBody(s) {
   if (!s) return { title: "", body: "" };
   const parts = s.split(/\r?\n\r?\n/, 2);
@@ -221,8 +210,8 @@ function splitTitleAndBody(s) {
 }
 
 /* =========================
-  4) ガイドライン生成（維持）
-========================= */
+   4) ガイドライン生成（維持）
+   ========================= */
 function buildGuidelineFromSelections({ boke = [], tsukkomi = [], general = [] }) {
   const bokeLines = boke.filter((k) => BOKE_DEFS[k]).map((k) => `- ${BOKE_DEFS[k]}`);
   const tsukkomiLines = tsukkomi.filter((k) => TSUKKOMI_DEFS[k]).map((k) => `- ${TSUKKOMI_DEFS[k]}`);
@@ -244,8 +233,8 @@ function labelizeSelected({ boke = [], tsukkomi = [], general = [] }) {
 }
 
 /* =========================
-  5) プロンプト生成（±10%バンド厳守）
-========================= */
+   5) プロンプト生成（±10%バンド厳守）
+   ========================= */
 function buildPrompt({ theme, genre, characters, length, selected }) {
   const safeTheme = theme?.toString().trim() || "身近な題材";
   const safeGenre = genre?.toString().trim() || "一般";
@@ -295,9 +284,9 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "",
     // ★ 強化：「選択された技法」を“必ず”使う（未使用は不可）
     "■必ず使用する技法（名称を本文に書かない）",
-    "- 下記の各技法は **すべて** 本文中で最低1回以上、観客に伝わる具体的な台詞や展開として **必ず** 用いること（未使用は不可）。",
-    "- 出力前に **自己チェック** を行い、未使用の技法がある場合は **本文を追記** して満たしてから出力を終えること。",
-    "- 技法名や“この技法を使う”といったメタ表現は本文に **絶対に書かない**。",
+    "- 下記の各技法は すべて 本文中で最低1回以上、観客に伝わる具体的な台詞や展開として 必ず 用いること（未使用は不可）。",
+    "- 出力前に 自己チェック を行い、未使用の技法がある場合は 本文を追記 して満たしてから出力を終えること。",
+    "- 技法名や“この技法を使う”といったメタ表現は本文に 絶対に書かない。",
     guideline || "",
     "",
     "■分量・形式の厳守",
@@ -305,17 +294,16 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "- 各台詞は「名前: セリフ」の形式（半角コロン＋半角スペース : を使う）。",
     "- 各台詞の間には必ず空行を1つ入れる（Aの行とBの行の間を1行空ける）。",
     "- 出力は本文のみ（解説・メタ記述や途中での打ち切りを禁止）。",
+    `- 最後は必ず ${tsukkomiName}: もういいよ の一行で締める（この行は文字数に含める）。`,
     "- 「比喩」「皮肉」「風刺」と直接本文に書かない。",
     "- 「緊張感のある状態」とそれが「緩和する状態」を必ず作る。",
     "- 「選択された技法」をしっかり使う。",
     "■見出し・書式",
     "- 最初の1行に【タイトル】を入れ、その直後に本文（漫才）を続ける",
     "- タイトルと本文の間には必ず空行を1つ入れる",
-　　"■その他",
+    "■その他",
     "- 人間にとって「意外性」があるが「納得感」のある表現を使う。",
     "- 登場人物の個性を反映する。",
-   
-
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen };
@@ -323,12 +311,13 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
 
 /* ===== 指定文字数に30字以上足りない場合に本文を追記する ===== */
 async function generateContinuation({ client, model, baseBody, remainingChars, tsukkomiName }) {
-  let seed = baseBody.replace(new RegExp(`${tsukkomiName}: \\s*$`), "").trim();
+  let seed = baseBody.replace(new RegExp(`${tsukkomiName}: もういいよ\\s*$`), "").trim();
 
   const contPrompt = [
     "以下は途中まで書かれた漫才の本文です。これを“そのまま続けてください”。",
     "・タイトルは出さない",
     "・これまでの台詞やネタの反復はしない",
+    `・少なくとも ${remainingChars} 文字以上、自然に展開し、最後は ${tsukkomiName}: もういいよ で締める`,
     "・各行は「名前: セリフ」の形式（半角コロン＋スペース）",
     "・台詞同士の間には必ず空行を1つ挟む",
     "",
@@ -354,22 +343,20 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
   cont = normalizeSpeakerColons(cont);
   cont = ensureBlankLineBetweenTurns(cont);
   cont = ensureTsukkomiOutro(cont, tsukkomiName);
-  cont = ensureSingleOutro(cont, tsukkomiName); // ★ 追加：最後に1回だけへ統一
   return (seed + "\n" + cont).trim();
-
 }
 
 /* =========================
-  6) Grok (xAI) 呼び出し
-========================= */
+   6) Grok (xAI) 呼び出し
+   ========================= */
 const client = new OpenAI({
   apiKey: process.env.XAI_API_KEY,
   baseURL: "https://api.x.ai/v1",
 });
 
 /* =========================
-  失敗理由の整形
-========================= */
+   失敗理由の整形
+   ========================= */
 function normalizeError(err) {
   return {
     name: err?.name,
@@ -381,8 +368,8 @@ function normalizeError(err) {
 }
 
 /* =========================
-  7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）
-========================= */
+   7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）
+   ========================= */
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
@@ -413,7 +400,7 @@ export default async function handler(req, res) {
     });
 
     // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
-    const approxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
+    const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
     const messages = [
       { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },
       { role: "user", content: prompt },
@@ -422,8 +409,8 @@ export default async function handler(req, res) {
       model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
       messages,
       temperature: 0.8,
-      max_output_tokens: approxTok,
-      max_tokens: approxTok,
+      max_output_tokens: approxMaxTok,
+      max_tokens: approxMaxTok,
     };
 
     let completion;
@@ -444,7 +431,6 @@ export default async function handler(req, res) {
     body = normalizeSpeakerColons(body);
     body = ensureBlankLineBetweenTurns(body);
     body = ensureTsukkomiOutro(body, tsukkomiName);
-    body = ensureSingleOutro(body, tsukkomiName); // ★ 追加：最後に1回だけへ統一
 
     // 指定文字数との差を補う
     const deficit = targetLen - body.length;
@@ -461,7 +447,6 @@ export default async function handler(req, res) {
         body = normalizeSpeakerColons(body);
         body = ensureBlankLineBetweenTurns(body);
         body = ensureTsukkomiOutro(body, tsukkomiName);
-        body = ensureSingleOutro(body, tsukkomiName); // ★ 追加：最後に1回だけへ統一
       } catch (e) {
         console.warn("[continuation] failed:", e?.message || e);
       }
@@ -469,7 +454,6 @@ export default async function handler(req, res) {
 
     // ★ 最終レンジ調整：上下10%の範囲に収める（allowOverflow=false）
     body = enforceCharLimit(body, minLen, maxLen, false);
-    body = ensureSingleOutro(body, tsukkomiName); // ★ 追加：調整後も1回だけで終了
 
     // 成功判定：★本文非空のみ（語尾揺れで落とさない）
     const success = typeof body === "string" && body.trim().length > 0;
@@ -477,6 +461,29 @@ export default async function handler(req, res) {
       // 失敗：消費しない
       return res.status(500).json({ error: "Empty output" });
     }
+
+    /* === ★ 追加：指定文字数の90%未満なら絶対にクレジットを減らさない === */
+    const minRequired = Math.floor(targetLen * 0.9);
+    if (body.length < minRequired) {
+      // クレジット消費なしで、そのまま本文を返却
+      return res.status(200).json({
+        title: title || "（タイトル未設定）",
+        text: body || "（ネタの生成に失敗しました）",
+        meta: {
+          structure: structureMeta,
+          techniques: techniquesForMeta,
+          usage_count: (await getUsageRow(user_id)).output_count ?? null,
+          paid_credits: (await getUsageRow(user_id)).paid_credits ?? null,
+          target_length: targetLen,
+          min_length: minLen,
+          max_length: maxLen,
+          actual_length: body.length,
+          credit_consumed: false,
+          reason: "below_90_percent",
+        },
+      });
+    }
+    /* === ★ 追加ここまで === */
 
     // 成功：ここで初めて消費
     await consumeAfterSuccess(user_id);
@@ -506,6 +513,7 @@ export default async function handler(req, res) {
         min_length: minLen,
         max_length: maxLen,
         actual_length: body.length,
+        credit_consumed: true,
       },
     });
   } catch (err) {
