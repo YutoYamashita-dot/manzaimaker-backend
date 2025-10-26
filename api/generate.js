@@ -309,6 +309,7 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
     "- 人間にとって「意外性」があるが「納得感」のある表現を使う。",
     "- 登場人物の個性を反映する。",
     "- 観客がしっかり笑えるような表現を使う。",
+    "- 皮肉や風刺をところどころに入れる。",
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen };
@@ -397,10 +398,19 @@ export default async function handler(req, res) {
     const outLangCode = detectLang(req, explicitLang);
     const outLangName = LANG_NAME[outLangCode] || "English";
 
+    // ★ 追加：日本語/中国語以外の入力は4000字までに制限（theme / genre / characters）
+    const isJaOrZh = /^ja(\b|[-_])|^zh(\b|[-_])/i.test(outLangCode || "");
+    const LIMIT = 4000;
+    const cap = (s) => (typeof s === "string" ? s.slice(0, LIMIT) : s);
+
+    const themeC = isJaOrZh ? theme : cap(theme);
+    const genreC = isJaOrZh ? genre : cap(genre);
+    const charactersC = isJaOrZh ? characters : cap(characters);
+
     const { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen } = buildPrompt({
-      theme,
-      genre,
-      characters,
+      theme: themeC,
+      genre: genreC,
+      characters: charactersC,
       length,
       selected: {
         boke: Array.isArray(boke) ? boke : [],
