@@ -304,6 +304,7 @@ function buildPrompt({ theme, genre, characters, length, selected }) {
     "■その他",
     "- 人間にとって「意外性」があるが「納得感」のある表現を使う。",
     "- 登場人物の個性を反映する。",
+    "- 観客がしっかり笑えるような表現を使う。",
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen };
