@@ -44,7 +44,7 @@ async function incrementUsage(user_id, delta = 1) {
 }
 
 /* === ★ 課金ユーティリティ（後払い消費：失敗時は絶対に減らさない） === */
-const FREE_QUOTA = 20;
+const FREE_QUOTA = 500;
 
 async function getUsageRow(user_id) {
   if (!hasSupabase || !user_id) return { output_count: 0, paid_credits: 0 };
