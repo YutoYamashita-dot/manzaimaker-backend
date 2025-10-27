@@ -166,9 +166,9 @@ function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
    3.5) 最終行の強制付与
    ========================= */
 function ensureTsukkomiOutro(text, tsukkomiName = "B") {
-  const outro = `${tsukkomiName}: That's allright.`;
+  const outro = `${tsukkomiName}: もういいよ！`;
   if (!text) return outro;
-  if (/That's allright\s*$/.test(text)) return text;
+  if (/もういいよ！\s*$/.test(text)) return text;
   return text.replace(/\s*$/, "") + "\n" + outro;
 }
 
