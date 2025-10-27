@@ -97,41 +97,41 @@ async function consumeAfterSuccess(user_id) {
    ========================= */
 const BOKE_DEFS = {
   IIMACHIGAI:
-    "言い間違い／聞き間違い：音韻のズレで意外性を生むボケ（例：「カニ食べ行こう」→「紙食べ行こう？」）。",
-  HIYU: "比喩ボケ：比喩で誇張してのボケ",
-  GYAKUSETSU: "逆説ボケ：一見正論に聞こえるが論理が破綻しているボケ。",
+    "Mispronunciation/Mishearing: A comedic effect created by unexpected phonetic shifts.",
+  HIYU: "Metaphor: A joke that exaggerates through metaphor.",
+  GYAKUSETSU: "Paradox: A joke that sounds reasonable at first but falls apart logically.",
   GIJI_RONRI:
-    "擬似論理ボケ：論理風だが中身がズレているボケ（例：「犬は四足、だから社長」）。",
-  TSUKKOMI_BOKE: "ツッコミボケ：ツッコミの発言が次のボケの伏線になるボケ。",
-  RENSA: "ボケの連鎖：ボケが次のボケを誘発するように連続させ、加速感を生むボケ。",
-  KOTOBA_ASOBI: "言葉遊び：ダジャレ・韻などで言語的にふざける。",
+    "Pseudo-logical joke: A joke that appears logical but is fundamentally flawed.",
+  TSUKKOMI_BOKE: "Tsukkomi-style punchline: A punchline where the tsukkomi's remark sets up the next joke.",
+  RENSA: "Chain of jokes: A series of jokes that trigger subsequent jokes, creating a sense of acceleration.",
+  KOTOBA_ASOBI: "Wordplay: Playing around with language through puns, rhymes, etc.",
 };
 
 const TSUKKOMI_DEFS = {
   ODOROKI_GIMON:
-    "驚き・疑問ツッコミ：観客の代弁として即時の驚き・疑問でのツッコミ。",
-  AKIRE_REISEI:
-    "呆れ・冷静ツッコミ：感情を抑えた冷静な態度でのツッコミ。",
-  OKORI: "怒りツッコミ：怒ったような言い方でのツッコミ。",
-  KYOKAN: "共感ツッコミ：相手の感情に一度共感してから、ツッコミをする。",
-  META: "メタツッコミ：漫才の形式・構造そのものを指摘するツッコミ。",
+    "Surprise / Question Tsukkomi： A retort that instantly voices surprise or doubt on behalf of the audience.Often delivered with wide-eyed astonishment or an exclamation like “What are you talking about?!” — this style bridges the performer and the audience by reacting naturally to the boke’s (funny man’s) absurd statement.",
+  AKIRE_REISEI: "Exasperated / Calm Tsukkomi：A reaction that suppresses emotion and stays cool, almost as if giving up on the boke’s nonsense.The humor comes from understatement and composure — the calmness itself contrasts sharply with the chaos, making it funnier.",
+  OKORI: "Angry Tsukkomi：A retort delivered with mock anger or heightened emotion.The tsukkomi acts furious — shouting or scolding — but it’s performed in a controlled, comedic way that signals playfulness rather than real aggression.",
+  KYOKAN: "Empathetic Tsukkomi：The tsukkomi first empathizes with the boke’s emotion or idea — “Yeah, I get that…” — and then humorously corrects or challenges it.This creates a sense of warmth and human connection before the punchline.",
+  META: "Meta Tsukkomi： A self-aware retort that breaks the fourth wall by commenting on the manzai performance itself — its format, timing, or comedic clichés.It humoously points out the structure of the act, like saying “That’s not how manzai is supposed to go!” or “You’re skipping the setup!”",
 };
 
 const GENERAL_DEFS = {
-  SANDAN_OCHI: "三段オチ：1・2をフリ、3で意外なオチ。",
-  GYAKUHARI: "逆張り構成：期待・常識を外して予想を逆手に取る。",
-  TENKAI_HAKAI: "展開破壊：築いた流れを意図的に壊し異質な要素を挿入。",
-  KANCHIGAI_TEISEI: "勘違い→訂正：ボケの勘違いをツッコミが訂正する構成。",
-  SURECHIGAI: "すれ違い：互いの前提が噛み合わずズレ続けて笑いを生む。",
-  TACHIBA_GYAKUTEN: "立場逆転：途中または終盤で役割・地位がひっくり返る。",
+  SANDAN_OCHI: "Three-Step Punchline：A structure where the first two lines set a pattern, and the third delivers an unexpected twist.The humor arises from rhythmic repetition and the final subversion — setup, setup, surprise.Comparable to: the “rule of three” in Western comedy, but often with tighter rhythm and visual payoff.",
+  GYAKUHARI: "Reversal Logic：A technique that deliberately goes against audience expectations or common sense.The comedian takes a predictable setup and turns it upside down to reveal absurd or ironic truth.Comparable to: “contrarian humor” or “bait-and-switch jokes.”",
+  TENKAI_HAKAI: "Narrative Disruption：Intentionally breaking a story’s flow or inserting a completely unrelated element to create absurdity.The fun comes from destroying the narrative momentum just as it feels stable.Comparable to: “breaking narrative structure” or “anti-comedy” moments.",
+  KANCHIGAI_TEISEI: "Misunderstanding and Correction：A classic boke–tsukkomi pattern where the boke (funny man) misunderstands something, and the tsukkomi (straight man) sharply corrects it.The rhythm of “mistake → correction” drives the comedic timing.Comparable to: “misinterpretation gags” or “semantic confusion” jokes.",
+  SURECHIGAI: "Miscommunication Comedy：A situation where both characters keep talking past each other because their assumptions differ.The humor builds from their continued failure to align perspectives.Comparable to: “cross-talk” or “comedic misunderstanding dialogue.”",
+  TACHIBA_GYAKUTEN: "Role Reversal：Midway or at the end, the power balance or social position between characters flips.",
 };
 
 /* =========================
    2) 旧仕様：ランダム技法（維持）
+
    ========================= */
-const MUST_HAVE_TECH = "比喩ツッコミ";
+const MUST_HAVE_TECH = "Metaphor";
 function pickTechniquesWithMetaphor() {
-  const pool = ["風刺", "皮肉", "意外性と納得感", "勘違い→訂正", "言い間違い→すれ違い", "立場逆転", "具体例の誇張"];
+  const pool = ["Satire", "Irony", "Surprise and Conviction", "Misunderstanding and Correction", "Miscommunication comedy", "Role Reversal comedy", "Exaggeration of Specific Examples"];
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const extraCount = Math.floor(Math.random() * 3) + 1;
   return [MUST_HAVE_TECH, ...shuffled.slice(0, extraCount)];
@@ -166,9 +166,9 @@ function enforceCharLimit(text, minLen, maxLen, allowOverflow = false) {
    3.5) 最終行の強制付与
    ========================= */
 function ensureTsukkomiOutro(text, tsukkomiName = "B") {
-  const outro = `${tsukkomiName}: もういいよ`;
+  const outro = `${tsukkomiName}: That's allright.`;
   if (!text) return outro;
-  if (/もういいよ\s*$/.test(text)) return text;
+  if (/That's allright\s*$/.test(text)) return text;
   return text.replace(/\s*$/, "") + "\n" + outro;
 }
 
@@ -256,7 +256,7 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
 
   let techniquesForMeta = [];
   let guideline = "";
-  let structureMeta = ["フリ", "伏線回収", "最後のオチ"];
+  let structureMeta = ["Setup / Introduction", "Callback / Foreshadowing Payoff", "Clear Final Punch"];
 
   if (hasNewSelection) {
     guideline = buildGuidelineFromSelections(selected);
@@ -266,50 +266,49 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
   } else {
     const usedTechs = pickTechniquesWithMetaphor();
     techniquesForMeta = usedTechs;
-    guideline = "【採用する技法（クライアント未指定のため自動選択）】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
+    guideline = "【Techniques to be adopted】\n" + usedTechs.map((t) => `- ${t}`).join("\n");
   }
 
   const tsukkomiName = names[1] || "B";
 
   const prompt = [
     // ★ ここだけ言語指定を追記：出力は outLangName で
-    `あなたは実力派の漫才師コンビです。「選択された技法」を必ず使い、出力は必ず ${outLangName}（タイトル・本文ともに）で書いてください。`,
-    "もし指定言語以外が混ざった場合は、すべて指定言語に書き直してから出力してください。",
+    `You are a powerhouse Manzai duo. Be sure to use the “adopted techniques” and write all output in ${outLangName} (both title and body).`,
+    "If any languages other than the specified language are mixed in, rewrite everything in the specified language before outputting.",
     "",
-    `■題材: ${safeTheme}`,
-    `■ジャンル: ${safeGenre}`,
-    `■登場人物: ${names.join("、")}`,
-    `■目標文字数: ${minLen}〜${maxLen}文字（必ずこの範囲内に収める）`,
+    `■Theme: ${safeTheme}`,
+    `■Genre: ${safeGenre}`,
+    `■Characters: ${names.join("、")}`,
+    `■Target word count: ${minLen}〜${maxLen}Text (Fit within this area)`,
     "",
-    "■必須の構成",
-    "- 1) フリ（導入）：ボケやオチを成立させるための「前提」「状況設定」「観客との共通認識づくり」を設定する。",
-    "- 2) 伏線回収：フリ（導入）の段階で提示された情報・言葉・構図を、後半で再登場させて「意外な形で再接続」させる。",
-    "- 3) 最後は明確な“オチ”：全てのズレ・やり取りを収束させる表現、言葉を使う。",
+    "■Required configuration",
+    "- 1) Setup / Introduction：The “setup” phase that establishes the premise, situation, and shared understanding between the performers and the audience. It prepares the ground for later jokes (boke) or punchlines (ochi) by defining the context, tone, and logic of the world. Comparable to: the “premise” or “framing” in Western sketch or stand-up comedy.",
+    "- 2) Callback / Foreshadowing Payoff：A technique where information, phrases, or visual motifs introduced earlier (in the furi) reappear later in a surprising and meaningful way. The laughter comes from the audience’s recognition and the clever re-connection of elements that seemed trivial before. Comparable to: “callback jokes” or “Chekhov’s gun” used comedically.",
+    "- 3) Clear Final Punch：The definitive punchline or closing expression that resolves all the comedic tension and misalignments built throughout the act. It serves as the narrative and emotional endpoint — signaling to the audience, “this is the laugh we’ve been building toward.” Comparable to: the “punchline” or “button” in Western comedy, but in owarai, it carries stronger structural and rhythmic significance.",
     "",
     // ★ 強化：「選択された技法」を“必ず”使う（未使用は不可）
-    "■必ず使用する技法（名称を本文に書かない）",
-    "- 下記の各技法は すべて 本文中で最低1回以上、観客に伝わる具体的な台詞や展開として 必ず 用いること（未使用は不可）。",
-    "- 出力前に 自己チェック を行い、未使用の技法がある場合は 本文を追記 して満たしてから出力を終えること。",
-    "- 技法名や“この技法を使う”といったメタ表現は本文に 絶対に書かない。",
+    "■Required techniques (do not list technique names in the main text)",
+    "- All of the following techniques must be used at least once in the main text as specific lines or developments that are conveyed to the audience (non-use is not allowed).",
+    "- Before outputting, perform a self-check, and if there are any unused techniques, add to the main text to fulfill this requirement.",
     guideline || "",
     "",
-    "■分量・形式の厳守",
-    `- 会話の行数は 少なくとも ${minLines} 行以上（1台詞あたり 25〜40 文字目安）。`,
-    "- 各台詞は「名前: セリフ」の形式（半角コロン＋半角スペース : を使う）。",
-    "- 各台詞の間には必ず空行を1つ入れる（Aの行とBの行の間を1行空ける）。",
-    "- 出力は本文のみ（解説・メタ記述や途中での打ち切りを禁止）。",
-    `- 最後は必ず ${tsukkomiName}: もういいよ の一行で締める（この行は文字数に含める）。`,
-    "- 「比喩」「皮肉」「風刺」と直接本文に書かない。",
-    "- 「緊張感のある状態」とそれが「緩和する状態」を必ず作る。",
-    "- 「選択された技法」をしっかり使う。",
-    "■見出し・書式",
-    "- 最初の1行に【タイトル】を入れ、その直後に本文（漫才）を続ける",
-    "- タイトルと本文の間には必ず空行を1つ入れる",
-    "■その他",
-    "- 人間にとって「意外性」があるが「納得感」のある表現を使う。",
-    "- 登場人物の個性を反映する。",
-    "- 観客がしっかり笑えるような表現を使う。",
-    "- 皮肉や風刺をところどころに入れる。",
+    "■Strict adherence to quantity and format",
+    `- Dialogue must contain at least ${minLines} lines (aim for 25-40 characters per line).`,
+    "- Each line must follow the format ”Name: Line“ (using a half-width colon : followed by a half-width space).",
+    "- Always insert one blank line between each line of dialogue (leave one blank line between A's line and B's line).",
+    "- Output must be the main text only (no explanations, meta descriptions, or abrupt endings allowed).",
+    `- Always end with the line ${tsukkomiName}: That's enough (include this line in the character count). `,
+    "- Do not directly write ”metaphor,“ ”irony,“ or ‘satire’ in the main text.",
+    "- Always create a ”tense state“ and a ”state where it is relieved.“",
+    "- Use the ”selected technique“ thoroughly.",
+    "■Headings and Formatting",
+    "- Place the 【Title】 on the first line, followed immediately by the main text (comedy routine)",
+    "- Always insert one blank line between the title and the main text",
+    "■Other",
+    "- Use expressions that are unexpected yet satisfying to humans.",
+    "- Reflect the characters' personalities.",
+    "- Use expressions that make the audience laugh heartily.",
+    "- Sprinkle in irony and satire here and there.",
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen };
@@ -317,22 +316,22 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
 
 /* ===== 指定文字数に30字以上足りない場合に本文を追記する ===== */
 async function generateContinuation({ client, model, baseBody, remainingChars, tsukkomiName }) {
-  let seed = baseBody.replace(new RegExp(`${tsukkomiName}: もういいよ\\s*$`), "").trim();
+  let seed = baseBody.replace(new RegExp(`${tsukkomiName}: That's allright\\s*$`), "").trim();
 
   const contPrompt = [
-    "以下は途中まで書かれた漫才の本文です。これを“そのまま続けてください”。",
-    "・タイトルは出さない",
-    "・これまでの台詞やネタの反復はしない",
-    `・少なくとも ${remainingChars} 文字以上、自然に展開し、最後は ${tsukkomiName}: もういいよ で締める`,
-    "・各行は「名前: セリフ」の形式（半角コロン＋スペース）",
-    "・台詞同士の間には必ず空行を1つ挟む",
+    "The following is the text of a manzai routine written only partially. Please continue it as is.",
+    "・Do not include the title",
+    "・Do not repeat previous lines or material",
+    `・Expand naturally for at least ${remainingChars} characters, ending with ${tsukkomiName}: That's enough!`,
+    "・Each line follows the format ”Name: Line“ (half-width colon + space)",
+    "・Always insert one blank line between lines of dialogue",
     "",
-    "【これまでの本文】",
+    "【Previous text】",
     seed,
   ].join("\n");
 
   const messages = [
-    { role: "system", content: "あなたは実力派の漫才師コンビです。本文の“続き”だけを出力してください。" },
+    { role: "system", content: "You are a talented comedy duo. Please output only the “continuation” of the main text." },
     { role: "user", content: contPrompt },
   ];
 
@@ -387,19 +386,19 @@ export default async function handler(req, res) {
     if (!gate.ok) {
       const row = gate.row || { output_count: 0, paid_credits: 0 };
       return res.status(403).json({
-        error: `使用上限（${FREE_QUOTA}回）に達しており、クレジットが不足しています。`,
+        error: `You have reached your usage limit (${FREE_QUOTA} times) and are running low on credits.`,
         usage_count: row.output_count,
         paid_credits: row.paid_credits,
       });
     }
 
-    // ★ 言語判定（lang 指定 > Accept-Language > en）
-    const explicitLang = (req.body?.lang || req.query?.lang || "").toLowerCase?.() || "";
-    const outLangCode = detectLang(req, explicitLang);
-    const outLangName = LANG_NAME[outLangCode] || "English";
+    // ★ 修正：アプリ指定言語を最優先（入力言語は無視）
+    const appLangTag = (req.body?.app_lang || req.headers["x-app-lang"] || "").toString().trim();
+    const fixedLangCode = appLangTag || "en";
+    const outLangName = LANG_NAME[fixedLangCode] || "English";
 
     // ★ 追加：日本語/中国語以外の入力は4000字までに制限（theme / genre / characters）
-    const isJaOrZh = /^ja(\b|[-_])|^zh(\b|[-_])/i.test(outLangCode || "");
+    const isJaOrZh = /^ja(\b|[-_])|^zh(\b|[-_])/i.test(fixedLangCode || "");
     const LIMIT = 4000;
     const cap = (s) => (typeof s === "string" ? s.slice(0, LIMIT) : s);
 
@@ -424,7 +423,9 @@ export default async function handler(req, res) {
     // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
     const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
     const messages = [
-      { role: "system", content: "あなたは実力派の漫才師コンビです。舞台で即使える台本だけを出力してください。解説・メタ記述は禁止。" },
+      // ★ 追加：systemで言語固定を強制
+      { role: "system", content: `You must respond ONLY in ${outLangName}. Do not use any other language. Output ONLY the script (no explanations).` },
+      { role: "system", content: "You are a powerhouse comedy duo. Please output only scripts that can be used immediately on stage. Explanations and meta descriptions are prohibited." },
       { role: "user", content: prompt },
     ];
     const payload = {
