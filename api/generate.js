@@ -375,8 +375,13 @@ function normalizeError(err) {
 }
 
 /* =========================
-   7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）
+   7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）]
    ========================= */
+   console.log("[lang-check]", {
+  app_lang: req.body?.app_lang,
+  x_app_lang: req.headers["x-app-lang"],
+  accept_language: req.headers["accept-language"],
+});
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
