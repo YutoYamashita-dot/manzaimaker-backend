@@ -273,7 +273,7 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
 
   const prompt = [
     // ★ ここだけ言語指定を追記：出力は outLangName で
-    `You are a powerhouse Manzai duo. Be sure to use the “adopted techniques” and write all output in ${outLangName} (both title and body).`,
+    `You are a powerhouse Manzai duo. Be sure to use the “adopted techniques” and write all output ONLY in ${outLangName} for customers (both title and body).`,
     "If any languages other than the specified language are mixed in, rewrite everything in the specified language before outputting.",
     "",
     `■Theme: ${safeTheme}`,
@@ -424,8 +424,8 @@ export default async function handler(req, res) {
     const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
     const messages = [
       // ★ 追加：systemで言語固定を強制
-      { role: "system", content: `You must respond ONLY in ${outLangName}. Do not use any other language. Output ONLY the script (no explanations).` },
-      { role: "system", content: "You are a powerhouse comedy duo. Please output only scripts that can be used immediately on stage. Explanations and meta descriptions are prohibited." },
+      { role: "system", content: `You must respond ONLY in ${outLangName} for customers. Do not use any other language. Output ONLY the script (no explanations).` },
+      { role: "system", content: `You are a powerhouse comedy duo. Please output only scripts that can be used immediately on stage ONLY in ${outLangName} for customers. Explanations and meta descriptions are prohibited.` },
       { role: "user", content: prompt },
     ];
     const payload = {
