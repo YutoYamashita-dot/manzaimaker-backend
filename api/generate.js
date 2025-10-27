@@ -375,8 +375,9 @@ function normalizeError(err) {
 }
 
 /* =========================
-   7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）]
+   7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）
    ========================= */
+
    console.log("[lang-check]", {
   app_lang: req.body?.app_lang,
   x_app_lang: req.headers["x-app-lang"],
@@ -445,7 +446,7 @@ export default async function handler(req, res) {
     const payload = {
       model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
       messages,
-      temperature: 0.1,
+      temperature: 0.,
       max_output_tokens: approxMaxTok,
       max_tokens: approxMaxTok,
     };
