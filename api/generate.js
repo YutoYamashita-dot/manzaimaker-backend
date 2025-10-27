@@ -378,11 +378,6 @@ function normalizeError(err) {
    7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）
    ========================= */
 
-   console.log("[lang-check]", {
-  app_lang: req.body?.app_lang,
-  x_app_lang: req.headers["x-app-lang"],
-  accept_language: req.headers["accept-language"],
-});
 export default async function handler(req, res) {
   try {
     if (req.method !== "POST") return res.status(405).json({ error: "Method Not Allowed" });
@@ -404,6 +399,13 @@ export default async function handler(req, res) {
     const appLangTag = (req.body?.app_lang || req.headers["x-app-lang"] || "").toString().trim();
     const fixedLangCode = appLangTag || "en";
     const outLangName = LANG_NAME[fixedLangCode] || "English";
+
+    // ✅ ★ ここでログを出す
+    console.log("[lang-check]", {
+      app_lang: req.body?.app_lang,
+      x_app_lang: req.headers["x-app-lang"],
+      accept_language: req.headers["accept-language"],
+    });
 
     // ★ 追加：日本語/中国語以外の入力は4000字までに制限（theme / genre / characters）
     const isJaOrZh = /^ja(\b|[-_])|^zh(\b|[-_])/i.test(fixedLangCode || "");
