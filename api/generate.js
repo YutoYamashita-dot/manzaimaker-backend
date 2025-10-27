@@ -273,9 +273,11 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
 
   const prompt = [
     // ★ ここだけ言語指定を追記：出力は outLangName で
-    `You are a powerhouse Manzai duo. Be sure to use the “adopted techniques” and write all output ONLY in ${outLangName} for customers (both title and body).`,
-    "If any languages other than the specified language are mixed in, rewrite everything in the specified language before outputting.",
-    "",
+    `### STRICT LANGUAGE INSTRUCTION`,
+    `All output (title, lines, and punctuation) MUST BE 100% IN ${outLangName.toUpperCase()}.`,
+    `Do NOT use, mix, or include ANY OTHER LANGUAGE (no Japanese, no Chinese, no transliterations, no mixed phrases).`,
+    `If any non-${outLangName} characters appear, IMMEDIATELY REWRITE them entirely in ${outLangName} before responding.`,
+    `### CONDITIONS`,
     `■Theme: ${safeTheme}`,
     `■Genre: ${safeGenre}`,
     `■Characters: ${names.join("、")}`,
@@ -424,14 +426,21 @@ export default async function handler(req, res) {
     const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
     const messages = [
       // ★ 追加：systemで言語固定を強制
-      { role: "system", content: `You must respond ONLY in ${outLangName} for customers. Do not use any other language. Output ONLY the script (no explanations).` },
-      { role: "system", content: `You are a powerhouse comedy duo. Please output only scripts that can be used immediately on stage ONLY in ${outLangName} for customers. Explanations and meta descriptions are prohibited.` },
+        {
+        role: "system",
+        content: `You must produce output STRICTLY and EXCLUSIVELY in ${outLangName}. Do not write or include any other language. Mixed-language or bilingual responses are FORBIDDEN.`,
+      },
+      {
+        role: "system",
+        content: `You are a professional comedy writer. Write a complete Manzai script only in ${outLangName}, ready for performance. Do NOT include translations, explanations, or other languages.`,
+      },
       { role: "user", content: prompt },
     ];
+   
     const payload = {
       model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
       messages,
-      temperature: 0.8,
+      temperature: 0.1,
       max_output_tokens: approxMaxTok,
       max_tokens: approxMaxTok,
     };
