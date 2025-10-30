@@ -318,12 +318,12 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
 
 /* ===== 指定文字数に30字以上足りない場合に本文を追記する ===== */
 async function generateContinuation({ client, model, baseBody, remainingChars, tsukkomiName }) {
-   let seed = baseBody.replace(new RegExp(`${tsukkomiName}: もういいよ！\\s*$`), "").trim();
+   let seed = baseBody.replace(new RegExp(`${tsukkomiName}: That's allright!\\s*$`), "").trim();
   const contPrompt = [
     "The following is the text of a manzai routine written only partially. Please continue it as is.",
     "・Do not include the title",
     "・Do not repeat previous lines or material",
-    `・Expand naturally for at least ${remainingChars} characters, ending with ${tsukkomiName}: もういいよ！`,
+    `・Expand naturally for at least ${remainingChars} characters, ending with ${tsukkomiName}: That's allright!`,
     "・Each line follows the format ”Name: Line“ (half-width colon + space)",
     "・Always insert one blank line between lines of dialogue",
     "",
