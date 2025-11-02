@@ -34,6 +34,7 @@ export const SUPPORTED_LANGS = [
   "he",      // Hebrew
   "el",      // Greek
   "cs",      // Czech
+  "hi", 
   "ro"       // Romanian
 ];
 
