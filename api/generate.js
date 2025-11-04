@@ -312,13 +312,18 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
     "- Use expressions that make the audience laugh heartily.",
     "- Sprinkle in irony and satire here and there.",
     "",
-    // ▼▼▼ Final Pre-Output Self-Check (English version of the provided list) ▼▼▼
+    // ▼▼▼ Final Pre-Output Self-Check (EN version with Temporary Tag Method) ▼▼▼
     "■ FINAL SELF-CHECK BEFORE OUTPUT:",
     "- Have you used ALL of the “selected techniques” at least once?",
+    "- Are the jokes “surprising yet convincing” so they land with laughter?",
+    "- Does the overall structure follow Setup → Callback/Payoff → Clear Final Punch?",
+    "- Even if there is narrative disruption mid-way, does the whole piece still read as one consistent manzai story?",
+    "- Did you sprinkle satire and irony?",
     `- Is the total character count within ${minLen}–${maxLen}?`,
     `- Is EVERY line in the format “Name: Line”?`,
     `- Does it end with ${tsukkomiName}: That's allright!?`,
     "- Is there exactly one blank line between the title and the main text?",
+    "- Temporary Tag Method: while revising, you may mark unmet items with temporary tags like [TMP-UNUSED-TECH], [TMP-LENGTH], [TMP-FORMAT], then resolve and REMOVE ALL TAGS before output. The final output must contain no tags or brackets.",
     "→ If ANY item is NO, immediately fix the script before output.",
   ].join("\n");
 
@@ -336,13 +341,18 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
     "・Each line follows the format ”Name: Line“ (half-width colon + space)",
     "・Always insert one blank line between lines of dialogue",
     "",
-    // ▼▼▼ Final Pre-Output Self-Check (echoed here; min/max placeholders intentionally literal) ▼▼▼
+    // ▼▼▼ Final Pre-Output Self-Check (EN version with Temporary Tag Method; min/max placeholders intentionally literal) ▼▼▼
     "■ FINAL SELF-CHECK BEFORE OUTPUT:",
     "- Have you used ALL of the “selected techniques” at least once?",
+    "- Are the jokes “surprising yet convincing” so they land with laughter?",
+    "- Does the overall structure follow Setup → Callback/Payoff → Clear Final Punch?",
+    "- Even if there is narrative disruption mid-way, does the whole piece still read as one consistent manzai story?",
+    "- Did you sprinkle satire and irony?",
     "- Is the total character count within \\${minLen}–\\${maxLen}?",
     "- Is EVERY line in the format “Name: Line”?",
     `- Does it end with ${tsukkomiName}: That's allright!?`,
     "- Is there exactly one blank line between the title and the main text?",
+    "- Temporary Tag Method: while revising, you may mark unmet items with temporary tags like [TMP-UNUSED-TECH], [TMP-LENGTH], [TMP-FORMAT], then resolve and REMOVE ALL TAGS before output. The final output must contain no tags or brackets.",
     "→ If ANY item is NO, immediately fix the script before output.",
     "",
     "【Previous text】",
@@ -397,12 +407,16 @@ function normalizeError(err) {
 async function selfVerifyAndCorrectBody({ client, model, body, requiredTechs = [], minLen, maxLen, tsukkomiName, outLangName }) {
   const checklist = [
     "■ FINAL SELF-CHECK BEFORE OUTPUT:",
-    `- Required “selected techniques”: ${requiredTechs.length ? requiredTechs.join(", ") : "(none specified)"}`,
-    "- Have you used ALL of the “selected techniques” at least once?",
+    `- Have you used ALL of the “selected techniques” at least once? (Selected techniques: ${requiredTechs.length ? requiredTechs.join(", ") : "(none specified)"})`,
+    "- Are the jokes “surprising yet convincing” so they land with laughter?",
+    "- Does the overall structure follow Setup → Callback/Payoff → Clear Final Punch?",
+    "- Even if there is narrative disruption mid-way, does the whole piece still read as one consistent manzai story?",
+    "- Did you sprinkle satire and irony?",
     `- Is the total character count within ${minLen}–${maxLen}?`,
     `- Is EVERY line in the format “Name: Line”?`,
     `- Does it end with ${tsukkomiName}: That's allright!?`,
     "- Is there exactly one blank line between the title and the main text?",
+    "- Temporary Tag Method: while revising, you may mark unmet items with temporary tags like [TMP-UNUSED-TECH], [TMP-LENGTH], [TMP-FORMAT], then resolve and REMOVE ALL TAGS before output. The final output must contain no tags or brackets.",
     "→ If ANY item is NO, immediately fix the script before output.",
   ].join("\n");
 
