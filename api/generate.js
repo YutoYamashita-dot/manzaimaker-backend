@@ -340,7 +340,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
   const resp = await client.chat.completions.create({
     model,
     messages,
-    temperature: 0.1,
+    temperature: 0,
     max_output_tokens: approxTok,
     max_tokens: approxTok,
   });
@@ -447,7 +447,7 @@ export default async function handler(req, res) {
     const payload = {
       model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
       messages,
-      temperature: 0.,
+      temperature: 0,
       max_output_tokens: approxMaxTok,
       max_tokens: approxMaxTok,
     };
