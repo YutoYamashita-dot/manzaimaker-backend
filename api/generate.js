@@ -1,5 +1,5 @@
 // api/generate.js
-// Vercel Node.js (ESM)。本文と「タイトル」を日本語で返す（台本のみ）
+// Vercel Node.js (ESM)。本文と「タイトル」を返す（台本のみ）
 // 必須: XAI_API_KEY
 // 任意: XAI_MODEL（未設定なら grok-4）
 // 追加: SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY（ある場合、user_id の回数/クレジットを保存）
@@ -299,7 +299,7 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
     "- Each line must follow the format ”Name: Line“ (using a half-width colon : followed by a half-width space).",
     "- Always insert one blank line between each line of dialogue (leave one blank line between A's line and B's line).",
     "- Output must be the main text only (no explanations, meta descriptions, or abrupt endings allowed).",
-    `- Always end with the line ${tsukkomiName}: That's enough (include this line in the character count). `,
+    `- Always end with the line ${tsukkomiName}: That's allright! (include this line in the character count).`,
     "- Do not directly write ”metaphor,“ ”irony,“ or ‘satire’ in the main text.",
     "- Always create a ”tense state“ and a ”state where it is relieved.“",
     "- Use the ”selected technique“ thoroughly.",
@@ -311,6 +311,15 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
     "- Reflect the characters' personalities.",
     "- Use expressions that make the audience laugh heartily.",
     "- Sprinkle in irony and satire here and there.",
+    "",
+    // ▼▼▼ Final Pre-Output Self-Check (English version of the provided list) ▼▼▼
+    "■ FINAL SELF-CHECK BEFORE OUTPUT:",
+    "- Have you used ALL of the “selected techniques” at least once?",
+    `- Is the total character count within ${minLen}–${maxLen}?`,
+    `- Is EVERY line in the format “Name: Line”?`,
+    `- Does it end with ${tsukkomiName}: That's allright!?`,
+    "- Is there exactly one blank line between the title and the main text?",
+    "→ If ANY item is NO, immediately fix the script before output.",
   ].join("\n");
 
   return { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen };
@@ -326,6 +335,15 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
     `・Expand naturally for at least ${remainingChars} characters, ending with ${tsukkomiName}: That's allright!`,
     "・Each line follows the format ”Name: Line“ (half-width colon + space)",
     "・Always insert one blank line between lines of dialogue",
+    "",
+    // ▼▼▼ Final Pre-Output Self-Check (echoed here; min/max placeholders intentionally literal) ▼▼▼
+    "■ FINAL SELF-CHECK BEFORE OUTPUT:",
+    "- Have you used ALL of the “selected techniques” at least once?",
+    "- Is the total character count within \\${minLen}–\\${maxLen}?",
+    "- Is EVERY line in the format “Name: Line”?",
+    `- Does it end with ${tsukkomiName}: That's allright!?`,
+    "- Is there exactly one blank line between the title and the main text?",
+    "→ If ANY item is NO, immediately fix the script before output.",
     "",
     "【Previous text】",
     seed,
@@ -371,6 +389,101 @@ function normalizeError(err) {
     data: err?.response?.data ?? err?.error,
     stack: process.env.NODE_ENV === "production" ? undefined : err?.stack,
   };
+}
+
+/* =========================
+   5.5) 本文の自己検証＆自動修正パス（不足技法があれば追記/修正）
+   ========================= */
+async function selfVerifyAndCorrectBody({ client, model, body, requiredTechs = [], minLen, maxLen, tsukkomiName, outLangName }) {
+  const checklist = [
+    "■ FINAL SELF-CHECK BEFORE OUTPUT:",
+    `- Required “selected techniques”: ${requiredTechs.length ? requiredTechs.join(", ") : "(none specified)"}`,
+    "- Have you used ALL of the “selected techniques” at least once?",
+    `- Is the total character count within ${minLen}–${maxLen}?`,
+    `- Is EVERY line in the format “Name: Line”?`,
+    `- Does it end with ${tsukkomiName}: That's allright!?`,
+    "- Is there exactly one blank line between the title and the main text?",
+    "→ If ANY item is NO, immediately fix the script before output.",
+  ].join("\n");
+
+  const verifyPrompt = [
+    `You are a strict editor. Review the script below and output a fully corrected script ONLY in ${outLangName}.`,
+    "If it already satisfies ALL requirements, output it unchanged.",
+    "Output MUST be the script only (no explanations, no meta commentary, no tags).",
+    "",
+    checklist,
+    "",
+    "【SCRIPT】",
+    body,
+  ].join("\n");
+
+  const messages = [
+    { role: "system", content: `You are a strict editor. Output ONLY the corrected script in ${outLangName}, no explanations.` },
+    { role: "user", content: verifyPrompt },
+  ];
+
+  const approxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 2000) * 3));
+  const resp = await client.chat.completions.create({
+    model,
+    messages,
+    temperature: 0,
+    max_output_tokens: approxTok,
+    max_tokens: approxTok,
+  });
+
+  let revised = resp?.choices?.[0]?.message?.content?.trim() || body;
+
+  // 仕上げ整形（順序固定）
+  revised = normalizeSpeakerColons(revised);
+  revised = ensureBlankLineBetweenTurns(revised);
+  revised = ensureTsukkomiOutro(revised, tsukkomiName);
+  revised = enforceCharLimit(revised, minLen, maxLen, false);
+
+  return revised;
+}
+
+/* =========================
+   5.6) ★ 追加：出力言語の最終自己検証＆自動修正パス
+   ========================= */
+async function selfVerifyLanguageAndFix({ client, model, body, outLangName, tsukkomiName, minLen, maxLen }) {
+  const prompt = [
+    `Ensure the ENTIRE script is written STRICTLY and EXCLUSIVELY in ${outLangName}.`,
+    `If ANY non-${outLangName} words, characters, or punctuation appear (including Japanese kana/kanji, Chinese hanzi, or mixed phrases),`,
+    `IMMEDIATELY REWRITE those parts so that the WHOLE script is purely in ${outLangName}.`,
+    "",
+    "RULES:",
+    "- Output ONLY the corrected script (no explanations).",
+    "- Keep the structure, beats, and jokes intact but translate/normalize wording into the target language.",
+    `- Preserve the format “Name: Line” and end with “${tsukkomiName}: That's allright!”.`,
+    `- Keep the total length within ${minLen}–${maxLen} characters if reasonably possible; if not possible without breaking language purity, prefer language purity.`,
+    "",
+    "【SCRIPT】",
+    body,
+  ].join("\n");
+
+  const messages = [
+    { role: "system", content: `You are a strict language enforcer. Output ONLY the corrected script in ${outLangName}.` },
+    { role: "user", content: prompt },
+  ];
+
+  const approxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 2000) * 3));
+  const resp = await client.chat.completions.create({
+    model,
+    messages,
+    temperature: 0,
+    max_output_tokens: approxTok,
+    max_tokens: approxTok,
+  });
+
+  let revised = resp?.choices?.[0]?.message?.content?.trim() || body;
+
+  // 仕上げ整形（順序固定）
+  revised = normalizeSpeakerColons(revised);
+  revised = ensureBlankLineBetweenTurns(revised);
+  revised = ensureTsukkomiOutro(revised, tsukkomiName);
+  revised = enforceCharLimit(revised, minLen, maxLen, false);
+
+  return revised;
 }
 
 /* =========================
@@ -429,7 +542,7 @@ export default async function handler(req, res) {
       outLangName,
     });
 
-    // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
+     // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
     const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
     const messages = [
       // ★ 追加：systemで言語固定を強制
@@ -491,6 +604,22 @@ export default async function handler(req, res) {
       }
     }
 
+    // ★ 自己検証＆自動修正（採用する技法・形式の担保）
+    try {
+      body = await selfVerifyAndCorrectBody({
+        client,
+        model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
+        body,
+        requiredTechs: Array.isArray(techniquesForMeta) ? techniquesForMeta : [],
+        minLen,
+        maxLen,
+        tsukkomiName,
+        outLangName,
+      });
+    } catch (e) {
+      console.warn("[self-verify] failed:", e?.message || e);
+    }
+
     // ★ 最終レンジ調整：上下10%の範囲に収める（allowOverflow=false）
     body = enforceCharLimit(body, minLen, maxLen, false);
 
@@ -523,6 +652,21 @@ export default async function handler(req, res) {
       });
     }
     /* === ★ 追加ここまで === */
+
+    // ★★★ 追加：最後に「アプリ指定言語での出力」を自己検証＆修正
+    try {
+      body = await selfVerifyLanguageAndFix({
+        client,
+        model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
+        body,
+        outLangName,
+        tsukkomiName,
+        minLen,
+        maxLen,
+      });
+    } catch (e) {
+      console.warn("[self-verify-language] failed:", e?.message || e);
+    }
 
     // 成功：ここで初めて消費
     await consumeAfterSuccess(user_id);
