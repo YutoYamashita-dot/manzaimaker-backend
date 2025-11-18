@@ -126,6 +126,67 @@ const GENERAL_DEFS = {
 };
 
 /* =========================
+   ★ 禁止ワード一覧（本文に絶対に含めない）
+   ========================= */
+const FORBIDDEN_TERMS = [
+  // 日本語
+  "皮肉",
+  "風刺",
+  "緊張",
+  "緩和",
+  "伏線",
+  "比喩",
+  // 英語（単数・複数・形容詞）
+  "irony",
+  "ironic",
+  "satire",
+  "satirical",
+  "tension",
+  "relief",
+  "foreshadow",
+  "foreshadowing",
+  "metaphor",
+  "metaphors",
+  // ローマ字
+  "hiniku",
+  "fushi",
+  "kinchou",
+  "kanwa",
+  "fukusen",
+  "hiyu",
+  // その他よくある派生
+  "sarcasm",
+  "sarcastic",
+];
+
+function containsForbiddenTerm(text = "") {
+  if (!text) return false;
+  const lower = text.toLowerCase();
+  for (const term of FORBIDDEN_TERMS) {
+    if (!term) continue;
+    // 英数字系は小文字で判定、日本語などはそのまま
+    if (/^[\x00-\x7f]+$/.test(term)) {
+      if (lower.includes(term.toLowerCase())) return true;
+    } else {
+      if (text.includes(term)) return true;
+    }
+  }
+  return false;
+}
+
+function stripForbiddenTerms(text = "") {
+  if (!text) return "";
+  let out = text;
+  for (const term of FORBIDDEN_TERMS) {
+    if (!term) continue;
+    const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(escaped, /^[\x00-\x7f]+$/.test(term) ? "gi" : "g");
+    out = out.replace(re, "");
+  }
+  return out;
+}
+
+/* =========================
    2) 旧仕様：ランダム技法（維持）
 
    ========================= */
@@ -301,6 +362,7 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
     "- Output must be the main text only (no explanations, meta descriptions, or abrupt endings allowed).",
     `- Always end with the line ${tsukkomiName}: That's allright! (include this line in the character count).`,
     "- Do not directly write ”metaphor,“ ”irony,“ or ‘satire’ in the main text.",
+    "- Also, do not write words such as “皮肉, 風刺, 緊張, 緩和, 伏線, 比喩” or their equivalents in ANY language in the main text.",
     "- Always create a ”tense state“ and a ”state where it is relieved.“",
     "- Use the ”selected technique“ thoroughly.",
     "■Headings and Formatting",
@@ -319,6 +381,7 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
     "- Does the overall structure follow Setup → Callback/Payoff → Clear Final Punch?",
     "- Even if there is narrative disruption mid-way, does the whole piece still read as one consistent manzai story?",
     "- Did you sprinkle satire and irony?",
+    "- Confirm that the main text does NOT contain any of the forbidden words (for example: “皮肉, 風刺, 緊張, 緩和, 伏線, 比喩, irony, satire, tension, relief, foreshadow, metaphor”) or their equivalents in ANY language.",
     `- Is the total character count within ${minLen}–${maxLen}?`,
     `- Is EVERY line in the format “Name: Line”?`,
     `- Does it end with ${tsukkomiName}: That's allright!?`,
@@ -332,7 +395,7 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
 
 /* ===== 指定文字数に30字以上足りない場合に本文を追記する ===== */
 async function generateContinuation({ client, model, baseBody, remainingChars, tsukkomiName }) {
-   let seed = baseBody.replace(new RegExp(`${tsukkomiName}: That's allright!\\s*$`), "").trim();
+  let seed = baseBody.replace(new RegExp(`${tsukkomiName}: That's allright!\\s*$`), "").trim();
   const contPrompt = [
     "The following is the text of a manzai routine written only partially. Please continue it as is.",
     "・Do not include the title",
@@ -348,6 +411,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
     "- Does the overall structure follow Setup → Callback/Payoff → Clear Final Punch?",
     "- Even if there is narrative disruption mid-way, does the whole piece still read as one consistent manzai story?",
     "- Did you sprinkle satire and irony?",
+    "- Confirm that the main text does NOT contain any of the forbidden words (for example: “皮肉, 風刺, 緊張, 緩和, 伏線, 比喩, irony, satire, tension, relief, foreshadow, metaphor”) or their equivalents in ANY language.",
     "- Is the total character count within \\${minLen}–\\${maxLen}?",
     "- Is EVERY line in the format “Name: Line”?",
     `- Does it end with ${tsukkomiName}: That's allright!?`,
@@ -412,6 +476,7 @@ async function selfVerifyAndCorrectBody({ client, model, body, requiredTechs = [
     "- Does the overall structure follow Setup → Callback/Payoff → Clear Final Punch?",
     "- Even if there is narrative disruption mid-way, does the whole piece still read as one consistent manzai story?",
     "- Did you sprinkle satire and irony?",
+    "- Confirm that the main text does NOT contain any of the forbidden words (for example: “皮肉, 風刺, 緊張, 緩和, 伏線, 比喩, irony, satire, tension, relief, foreshadow, metaphor”) or their equivalents in ANY language.",
     `- Is the total character count within ${minLen}–${maxLen}?`,
     `- Is EVERY line in the format “Name: Line”?`,
     `- Does it end with ${tsukkomiName}: That's allright!?`,
@@ -501,6 +566,56 @@ async function selfVerifyLanguageAndFix({ client, model, body, outLangName, tsuk
 }
 
 /* =========================
+   5.7) ★ 追加：禁止ワード最終自己検証＆自動修正パス
+   ========================= */
+async function selfVerifyForbiddenWords({ client, model, body, outLangName, tsukkomiName, minLen, maxLen }) {
+  const forbiddenList = FORBIDDEN_TERMS.join(", ");
+  const prompt = [
+    "You are a strict content filter and editor.",
+    "Ensure that the script below does NOT contain ANY of the following forbidden terms or their direct translations in ANY language:",
+    forbiddenList,
+    "",
+    "If such terms appear anywhere, REWRITE those parts so they use different wording while preserving the comedic meaning.",
+    "",
+    "RULES:",
+    `- Output ONLY the corrected script, entirely in ${outLangName} (no explanations).`,
+    "- Do NOT simply delete whole lines unless absolutely necessary; prefer rewriting the specific phrases.",
+    `- Preserve the format “Name: Line” and make sure the final line is exactly “${tsukkomiName}: That's allright!”.`,
+    `- Try to keep the overall length within the range ${minLen}–${maxLen} characters if reasonably possible.`,
+    "",
+    "【SCRIPT】",
+    body,
+  ].join("\n");
+
+  const messages = [
+    { role: "system", content: `You are a strict content filter. Output ONLY the corrected script in ${outLangName}.` },
+    { role: "user", content: prompt },
+  ];
+
+  const approxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 2000) * 3));
+  const resp = await client.chat.completions.create({
+    model,
+    messages,
+    temperature: 0,
+    max_output_tokens: approxTok,
+    max_tokens: approxTok,
+  });
+
+  let revised = resp?.choices?.[0]?.message?.content?.trim() || body;
+
+  // 仕上げ整形（順序固定）
+  revised = normalizeSpeakerColons(revised);
+  revised = ensureBlankLineBetweenTurns(revised);
+  revised = ensureTsukkomiOutro(revised, tsukkomiName);
+  revised = enforceCharLimit(revised, minLen, maxLen, false);
+
+  // 念のため禁止ワードをローカルでも除去
+  revised = stripForbiddenTerms(revised);
+
+  return revised;
+}
+
+/* =========================
    7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）
    ========================= */
 
@@ -556,11 +671,11 @@ export default async function handler(req, res) {
       outLangName,
     });
 
-     // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
+    // モデル呼び出し（xAIは max_output_tokens を参照）★余裕UP
     const approxMaxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 3500) * 3));
     const messages = [
       // ★ 追加：systemで言語固定を強制
-        {
+      {
         role: "system",
         content: `You must produce output STRICTLY and EXCLUSIVELY in ${outLangName}. Do not write or include any other language. Mixed-language or bilingual responses are FORBIDDEN.`,
       },
@@ -570,7 +685,7 @@ export default async function handler(req, res) {
       },
       { role: "user", content: prompt },
     ];
-   
+
     const payload = {
       model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
       messages,
@@ -648,6 +763,9 @@ export default async function handler(req, res) {
     const minRequired = Math.floor(targetLen * 0.9);
     if (body.length < minRequired) {
       // クレジット消費なしで、そのまま本文を返却
+      // 念のため禁止ワードをローカルで除去
+      body = stripForbiddenTerms(body);
+
       return res.status(200).json({
         title: title || "（タイトル未設定）",
         text: body || "（ネタの生成に失敗しました）",
@@ -680,6 +798,28 @@ export default async function handler(req, res) {
       });
     } catch (e) {
       console.warn("[self-verify-language] failed:", e?.message || e);
+    }
+
+    // ★★★ 追加：禁止ワードを各言語で使っていないか自己検証＆修正
+    try {
+      body = await selfVerifyForbiddenWords({
+        client,
+        model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
+        body,
+        outLangName,
+        tsukkomiName,
+        minLen,
+        maxLen,
+      });
+    } catch (e) {
+      console.warn("[self-verify-forbidden] failed:", e?.message || e);
+      // モデル側で失敗した場合も、最低限ローカルで禁止ワードを除去
+      body = stripForbiddenTerms(body);
+    }
+
+    // 念のためハンドラの最後でも禁止ワードをローカル確認・除去
+    if (containsForbiddenTerm(body)) {
+      body = stripForbiddenTerms(body);
     }
 
     // 成功：ここで初めて消費
