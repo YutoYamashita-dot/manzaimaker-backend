@@ -432,7 +432,7 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
   const resp = await client.chat.completions.create({
     model,
     messages,
-    temperature: 0,
+    temperature: 0.2,
     max_output_tokens: approxTok,
     max_tokens: approxTok,
   });
@@ -505,7 +505,7 @@ async function selfVerifyAndCorrectBody({ client, model, body, requiredTechs = [
   const resp = await client.chat.completions.create({
     model,
     messages,
-    temperature: 0,
+    temperature: 0.2,
     max_output_tokens: approxTok,
     max_tokens: approxTok,
   });
@@ -549,7 +549,7 @@ async function selfVerifyLanguageAndFix({ client, model, body, outLangName, tsuk
   const resp = await client.chat.completions.create({
     model,
     messages,
-    temperature: 0,
+    temperature: 0.2,
     max_output_tokens: approxTok,
     max_tokens: approxTok,
   });
@@ -596,7 +596,7 @@ async function selfVerifyForbiddenWords({ client, model, body, outLangName, tsuk
   const resp = await client.chat.completions.create({
     model,
     messages,
-    temperature: 0,
+    temperature: 0.2,
     max_output_tokens: approxTok,
     max_tokens: approxTok,
   });
@@ -689,7 +689,7 @@ export default async function handler(req, res) {
     const payload = {
       model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
       messages,
-      temperature: 0,
+      temperature: 0.2,
       max_output_tokens: approxMaxTok,
       max_tokens: approxMaxTok,
     };
