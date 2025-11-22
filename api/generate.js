@@ -616,6 +616,59 @@ async function selfVerifyForbiddenWords({ client, model, body, outLangName, tsuk
 }
 
 /* =========================
+   5.8) ★ 追加：最終・言語＆禁止ワード自己検証パス（アプリ指定言語をもう一度厳格確認）
+   ========================= */
+async function selfVerifyLanguageFinal({ client, model, body, outLangName, tsukkomiName, minLen, maxLen }) {
+  const forbiddenList = FORBIDDEN_TERMS.join(", ");
+  const prompt = [
+    `FINAL LANGUAGE & CONTENT CHECK:`,
+    `1) Ensure the ENTIRE script is written STRICTLY and EXCLUSIVELY in ${outLangName}.`,
+    `2) Ensure the script does NOT contain ANY of the following forbidden terms or their direct translations in ANY language:`,
+    forbiddenList,
+    "",
+    `If ANY non-${outLangName} elements or forbidden terms appear, REWRITE ONLY those parts so that:`,
+    `- The WHOLE script is purely in ${outLangName}.`,
+    `- All forbidden concepts are expressed with alternative wording (no direct use of the forbidden terms).`,
+    "",
+    "RULES:",
+    `- Output ONLY the corrected script in ${outLangName} (no explanations, no tags).`,
+    "- Preserve the existing structure, beats, and overall comedic flow as much as possible.",
+    `- Preserve the format “Name: Line” and make sure the final line is exactly “${tsukkomiName}: That's allright!”.`,
+    `- Keep the total length roughly within the range ${minLen}–${maxLen} characters if reasonably possible; language correctness takes priority over exact length.`,
+    "",
+    "【SCRIPT】",
+    body,
+  ].join("\n");
+
+  const messages = [
+    { role: "system", content: `You are the final QA editor. Output ONLY the corrected script in ${outLangName}, strictly following all rules.` },
+    { role: "user", content: prompt },
+  ];
+
+  const approxTok = Math.min(8192, Math.ceil(Math.max(maxLen * 2, 2000) * 3));
+  const resp = await client.chat.completions.create({
+    model,
+    messages,
+    temperature: 0.2,
+    max_output_tokens: approxTok,
+    max_tokens: approxTok,
+  });
+
+  let revised = resp?.choices?.[0]?.message?.content?.trim() || body;
+
+  // 仕上げ整形（順序固定）
+  revised = normalizeSpeakerColons(revised);
+  revised = ensureBlankLineBetweenTurns(revised);
+  revised = ensureTsukkomiOutro(revised, tsukkomiName);
+  revised = enforceCharLimit(revised, minLen, maxLen, false);
+
+  // 最終的にも禁止ワードはローカルで除去
+  revised = stripForbiddenTerms(revised);
+
+  return revised;
+}
+
+/* =========================
    7) HTTP ハンドラ（後払い消費＋安定出力のための緩和）
    ========================= */
 
@@ -818,6 +871,26 @@ export default async function handler(req, res) {
     }
 
     // 念のためハンドラの最後でも禁止ワードをローカル確認・除去
+    if (containsForbiddenTerm(body)) {
+      body = stripForbiddenTerms(body);
+    }
+
+    // ★★★ 追加：自己検証プロセス（最終）でもう一度「アプリ指定言語でネタを出力しているか」を厳格確認
+    try {
+      body = await selfVerifyLanguageFinal({
+        client,
+        model: process.env.XAI_MODEL || "grok-4-fast-reasoning",
+        body,
+        outLangName,
+        tsukkomiName,
+        minLen,
+        maxLen,
+      });
+    } catch (e) {
+      console.warn("[self-verify-language-final] failed:", e?.message || e);
+    }
+
+    // 最終的にも禁止ワードをローカル確認・除去
     if (containsForbiddenTerm(body)) {
       body = stripForbiddenTerms(body);
     }
