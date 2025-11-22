@@ -188,11 +188,18 @@ function stripForbiddenTerms(text = "") {
 
 /* =========================
    2) 旧仕様：ランダム技法（維持）
-
    ========================= */
 const MUST_HAVE_TECH = "Metaphor";
 function pickTechniquesWithMetaphor() {
-  const pool = ["Satire", "Irony", "Surprise and Conviction", "Misunderstanding and Correction", "Miscommunication comedy", "Role Reversal comedy", "Exaggeration of Specific Examples"];
+  const pool = [
+    "Satire",
+    "Irony",
+    "Surprise and Conviction",
+    "Misunderstanding and Correction",
+    "Miscommunication comedy",
+    "Role Reversal comedy",
+    "Exaggeration of Specific Examples",
+  ];
   const shuffled = [...pool].sort(() => Math.random() - 0.5);
   const extraCount = Math.floor(Math.random() * 3) + 1;
   return [MUST_HAVE_TECH, ...shuffled.slice(0, extraCount)];
@@ -468,10 +475,21 @@ function normalizeError(err) {
 /* =========================
    5.5) 本文の自己検証＆自動修正パス（不足技法があれば追記/修正）
    ========================= */
-async function selfVerifyAndCorrectBody({ client, model, body, requiredTechs = [], minLen, maxLen, tsukkomiName, outLangName }) {
+async function selfVerifyAndCorrectBody({
+  client,
+  model,
+  body,
+  requiredTechs = [],
+  minLen,
+  maxLen,
+  tsukkomiName,
+  outLangName,
+}) {
   const checklist = [
     "■ FINAL SELF-CHECK BEFORE OUTPUT:",
-    `- Have you used ALL of the “selected techniques” at least once? (Selected techniques: ${requiredTechs.length ? requiredTechs.join(", ") : "(none specified)"})`,
+    `- Have you used ALL of the “selected techniques” at least once? (Selected techniques: ${
+      requiredTechs.length ? requiredTechs.join(", ") : "(none specified)"
+    })`,
     "- Are the jokes “surprising yet convincing” so they land with laughter?",
     "- Does the overall structure follow Setup → Callback/Payoff → Clear Final Punch?",
     "- Even if there is narrative disruption mid-way, does the whole piece still read as one consistent manzai story?",
@@ -497,7 +515,10 @@ async function selfVerifyAndCorrectBody({ client, model, body, requiredTechs = [
   ].join("\n");
 
   const messages = [
-    { role: "system", content: `You are a strict editor. Output ONLY the corrected script in ${outLangName}, no explanations.` },
+    {
+      role: "system",
+      content: `You are a strict editor. Output ONLY the corrected script in ${outLangName}, no explanations.`,
+    },
     { role: "user", content: verifyPrompt },
   ];
 
@@ -541,7 +562,10 @@ async function selfVerifyLanguageAndFix({ client, model, body, outLangName, tsuk
   ].join("\n");
 
   const messages = [
-    { role: "system", content: `You are a strict language enforcer. Output ONLY the corrected script in ${outLangName}.` },
+    {
+      role: "system",
+      content: `You are a strict language enforcer. Output ONLY the corrected script in ${outLangName}.`,
+    },
     { role: "user", content: prompt },
   ];
 
@@ -568,7 +592,15 @@ async function selfVerifyLanguageAndFix({ client, model, body, outLangName, tsuk
 /* =========================
    5.7) ★ 追加：禁止ワード最終自己検証＆自動修正パス
    ========================= */
-async function selfVerifyForbiddenWords({ client, model, body, outLangName, tsukkomiName, minLen, maxLen }) {
+async function selfVerifyForbiddenWords({
+  client,
+  model,
+  body,
+  outLangName,
+  tsukkomiName,
+  minLen,
+  maxLen,
+}) {
   const forbiddenList = FORBIDDEN_TERMS.join(", ");
   const prompt = [
     "You are a strict content filter and editor.",
@@ -588,7 +620,10 @@ async function selfVerifyForbiddenWords({ client, model, body, outLangName, tsuk
   ].join("\n");
 
   const messages = [
-    { role: "system", content: `You are a strict content filter. Output ONLY the corrected script in ${outLangName}.` },
+    {
+      role: "system",
+      content: `You are a strict content filter. Output ONLY the corrected script in ${outLangName}.`,
+    },
     { role: "user", content: prompt },
   ];
 
@@ -616,9 +651,65 @@ async function selfVerifyForbiddenWords({ client, model, body, outLangName, tsuk
 }
 
 /* =========================
+   5.8補助) ★ 追加：各言語での「もういいよ！」フレーズ取得
+   ========================= */
+function getOutroPhraseForLang(outLangName) {
+  const name = (outLangName || "").toLowerCase();
+  if (name.includes("japanese") || name.includes("日本")) return "もういいよ！";
+  if (name.includes("english") || name === "en") return "That's allright!";
+  // 他言語は当面英語版をデフォルトとして扱う
+  return "That's allright!";
+}
+
+/* =========================
+   5.8補助) ★ 追加：最終行に「もういいよ！」相当が1回のみになるよう整形
+   ========================= */
+function ensureSingleLocalizedOutro(text, tsukkomiName, outLangName) {
+  if (!text) return text;
+  const outroWord = getOutroPhraseForLang(outLangName);
+  if (!outroWord) return text;
+
+  let t = text;
+
+  // 文末の余分な空白や改行を削る
+  t = t.replace(/\s+$/, "");
+
+  // 想定される「もういいよ！」系フレーズのバリエーションを全て一度削除
+  const variants = [
+    "That's allright!",
+    "That's all right!",
+    "That's alright!",
+    "Thats allright!",
+    "もういいよ！",
+    "もういいよ!",
+    outroWord,
+  ];
+
+  for (const v of variants) {
+    const esc = v.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    const re = new RegExp(esc, "g");
+    t = t.replace(re, "");
+  }
+
+  // 再度末尾の余分な空白や改行を削る
+  t = t.replace(/\s+$/, "");
+
+  // 最後に「ツッコミ名: 各言語での『もういいよ！』」を1行だけ付与
+  return t + "\n" + `${tsukkomiName}: ${outroWord}`;
+}
+
+/* =========================
    5.8) ★ 追加：最終・言語＆禁止ワード自己検証パス（アプリ指定言語をもう一度厳格確認）
    ========================= */
-async function selfVerifyLanguageFinal({ client, model, body, outLangName, tsukkomiName, minLen, maxLen }) {
+async function selfVerifyLanguageFinal({
+  client,
+  model,
+  body,
+  outLangName,
+  tsukkomiName,
+  minLen,
+  maxLen,
+}) {
   const forbiddenList = FORBIDDEN_TERMS.join(", ");
   const prompt = [
     `FINAL LANGUAGE & CONTENT CHECK:`,
@@ -641,7 +732,10 @@ async function selfVerifyLanguageFinal({ client, model, body, outLangName, tsukk
   ].join("\n");
 
   const messages = [
-    { role: "system", content: `You are the final QA editor. Output ONLY the corrected script in ${outLangName}, strictly following all rules.` },
+    {
+      role: "system",
+      content: `You are the final QA editor. Output ONLY the corrected script in ${outLangName}, strictly following all rules.`,
+    },
     { role: "user", content: prompt },
   ];
 
@@ -664,6 +758,9 @@ async function selfVerifyLanguageFinal({ client, model, body, outLangName, tsukk
 
   // 最終的にも禁止ワードはローカルで除去
   revised = stripForbiddenTerms(revised);
+
+  // ★ ここで「各言語での『もういいよ！』に相当するフレーズが最終行に1回のみ」になるよう強制
+  revised = ensureSingleLocalizedOutro(revised, tsukkomiName, outLangName);
 
   return revised;
 }
@@ -701,7 +798,7 @@ export default async function handler(req, res) {
       accept_language: req.headers["accept-language"],
     });
 
-    // ★ 追加：日本語/中国語以外の入力は4000字までに制限（theme / genre / characters）
+// ★ 追加：日本語/中国語以外の入力は4000字までに制限（theme / genre / characters）
     const isJaOrZh = /^ja(\b|[-_])|^zh(\b|[-_])/i.test(fixedLangCode || "");
     const LIMIT = 4000;
     const cap = (s) => (typeof s === "string" ? s.slice(0, LIMIT) : s);
@@ -710,7 +807,15 @@ export default async function handler(req, res) {
     const genreC = isJaOrZh ? genre : cap(genre);
     const charactersC = isJaOrZh ? characters : cap(characters);
 
-    const { prompt, techniquesForMeta, structureMeta, maxLen, minLen, tsukkomiName, targetLen } = buildPrompt({
+    const {
+      prompt,
+      techniquesForMeta,
+      structureMeta,
+      maxLen,
+      minLen,
+      tsukkomiName,
+      targetLen,
+    } = buildPrompt({
       theme: themeC,
       genre: genreC,
       characters: charactersC,
