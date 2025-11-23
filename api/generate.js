@@ -45,7 +45,7 @@ async function incrementUsage(user_id, delta = 1) {
 }
 
 /* === ★ 課金ユーティリティ（後払い消費：失敗時は絶対に減らさない） === */
-const FREE_QUOTA = 500;
+const FREE_QUOTA = 100;
 
 async function getUsageRow(user_id) {
   if (!hasSupabase || !user_id) return { output_count: 0, paid_credits: 0 };
@@ -379,15 +379,16 @@ function buildPrompt({ theme, genre, characters, length, selected, outLangName =
     "- Use expressions that are unexpected yet satisfying to humans.",
     "- Reflect the characters' personalities.",
     "- Use expressions that make the audience laugh heartily.",
-    "- Sprinkle in irony and satire here and there.",
+    "- Sprinkle in irony and satire here and there (as meaning, not as literal words).",
     "",
     // ▼▼▼ Final Pre-Output Self-Check (EN version with Temporary Tag Method) ▼▼▼
     "■ FINAL SELF-CHECK BEFORE OUTPUT:",
     "- Have you used ALL of the “selected techniques” at least once?",
+    "- Are there concrete lines or developments where each selected technique is actually embodied as a joke or move (not just mentioned by name)?",
     "- Are the jokes “surprising yet convincing” so they land with laughter?",
     "- Does the overall structure follow Setup → Callback/Payoff → Clear Final Punch?",
     "- Even if there is narrative disruption mid-way, does the whole piece still read as one consistent manzai story?",
-    "- Did you sprinkle satire and irony?",
+    "- Did you sprinkle satire and irony as comedic meaning (while avoiding all forbidden words and their direct translations)?",
     "- Confirm that the main text does NOT contain any of the forbidden words (for example: “皮肉, 風刺, 緊張, 緩和, 伏線, 比喩, irony, satire, tension, relief, foreshadow, metaphor”) or their equivalents in ANY language.",
     `- Is the total character count within ${minLen}–${maxLen}?`,
     `- Is EVERY line in the format “Name: Line”?`,
@@ -414,10 +415,11 @@ async function generateContinuation({ client, model, baseBody, remainingChars, t
     // ▼▼▼ Final Pre-Output Self-Check (EN version with Temporary Tag Method; min/max placeholders intentionally literal) ▼▼▼
     "■ FINAL SELF-CHECK BEFORE OUTPUT:",
     "- Have you used ALL of the “selected techniques” at least once?",
+    "- Are the selected techniques embodied as actual jokes or developments (not just mentioned by name)?",
     "- Are the jokes “surprising yet convincing” so they land with laughter?",
     "- Does the overall structure follow Setup → Callback/Payoff → Clear Final Punch?",
     "- Even if there is narrative disruption mid-way, does the whole piece still read as one consistent manzai story?",
-    "- Did you sprinkle satire and irony?",
+    "- Did you sprinkle satire and irony as comedic meaning (while avoiding all forbidden words and their direct translations)?",
     "- Confirm that the main text does NOT contain any of the forbidden words (for example: “皮肉, 風刺, 緊張, 緩和, 伏線, 比喩, irony, satire, tension, relief, foreshadow, metaphor”) or their equivalents in ANY language.",
     "- Is the total character count within \\${minLen}–\\${maxLen}?",
     "- Is EVERY line in the format “Name: Line”?",
@@ -490,10 +492,12 @@ async function selfVerifyAndCorrectBody({
     `- Have you used ALL of the “selected techniques” at least once? (Selected techniques: ${
       requiredTechs.length ? requiredTechs.join(", ") : "(none specified)"
     })`,
+    "- Are there specific lines or developments where each selected technique is actually embodied as a real comedic move (not just mentioned by name)?",
+    "- If any selected technique is missing in practice, revise and ADD new lines so that every selected technique appears at least once as part of the manzai (do not output technique names).",
     "- Are the jokes “surprising yet convincing” so they land with laughter?",
     "- Does the overall structure follow Setup → Callback/Payoff → Clear Final Punch?",
     "- Even if there is narrative disruption mid-way, does the whole piece still read as one consistent manzai story?",
-    "- Did you sprinkle satire and irony?",
+    "- Did you sprinkle satire and irony as comedic meaning (e.g., socially critical or twisty jokes), while still avoiding all forbidden words and their direct translations?",
     "- Confirm that the main text does NOT contain any of the forbidden words (for example: “皮肉, 風刺, 緊張, 緩和, 伏線, 比喩, irony, satire, tension, relief, foreshadow, metaphor”) or their equivalents in ANY language.",
     `- Is the total character count within ${minLen}–${maxLen}?`,
     `- Is EVERY line in the format “Name: Line”?`,
@@ -505,6 +509,9 @@ async function selfVerifyAndCorrectBody({
 
   const verifyPrompt = [
     `You are a strict editor. Review the script below and output a fully corrected script ONLY in ${outLangName}.`,
+    "You MUST verify that:",
+    "- Every selected technique is actually used at least once as a concrete joke or development (not just mentioned by name), and if not, you MUST rewrite and add lines to include it.",
+    "- There are several jokes whose content clearly functions as satire or irony in meaning, while still respecting all forbidden-word constraints.",
     "If it already satisfies ALL requirements, output it unchanged.",
     "Output MUST be the script only (no explanations, no meta commentary, no tags).",
     "",
@@ -798,7 +805,7 @@ export default async function handler(req, res) {
       accept_language: req.headers["accept-language"],
     });
 
-// ★ 追加：日本語/中国語以外の入力は4000字までに制限（theme / genre / characters）
+    // ★ 追加：日本語/中国語以外の入力は4000字までに制限（theme / genre / characters）
     const isJaOrZh = /^ja(\b|[-_])|^zh(\b|[-_])/i.test(fixedLangCode || "");
     const LIMIT = 4000;
     const cap = (s) => (typeof s === "string" ? s.slice(0, LIMIT) : s);
@@ -891,7 +898,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // ★ 自己検証＆自動修正（採用する技法・形式の担保）
+    // ★ 自己検証＆自動修正（採用する技法・形式・風刺/皮肉の担保）
     try {
       body = await selfVerifyAndCorrectBody({
         client,
@@ -917,7 +924,7 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Empty output" });
     }
 
-    /* === ★ 追加：指定文字数の90%未満なら絶対にクレジットを減らさない === */
+   /* === ★ 追加：指定文字数の90%未満なら絶対にクレジットを減らさない === */
     const minRequired = Math.floor(targetLen * 0.9);
     if (body.length < minRequired) {
       // クレジット消費なしで、そのまま本文を返却
@@ -928,6 +935,7 @@ export default async function handler(req, res) {
         title: title || "（タイトル未設定）",
         text: body || "（ネタの生成に失敗しました）",
         meta: {
+          extra_lang_tag: fixedLangCode, // ★ フロントの ResultActivity.EXTRA_LANG_TAG 用
           structure: structureMeta,
           techniques: techniquesForMeta,
           usage_count: (await getUsageRow(user_id)).output_count ?? null,
@@ -1020,6 +1028,7 @@ export default async function handler(req, res) {
       title: title || "（タイトル未設定）",
       text: body || "（ネタの生成に失敗しました）",
       meta: {
+        extra_lang_tag: fixedLangCode, // ★ フロントの ResultActivity.EXTRA_LANG_TAG 用
         structure: structureMeta,
         techniques: techniquesForMeta,
         usage_count: metaUsage,
